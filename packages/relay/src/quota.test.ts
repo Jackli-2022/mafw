@@ -34,3 +34,26 @@ test('enforces a per-room byte budget per second', () => {
   now = 1000;
   assert.equal(quota.allowBytes('room-a', 100_000), true);
 });
+
+test('enforces a global byte budget across rooms', () => {
+  let now = 0;
+  const quota = new Quota({ roomMbps: 2, globalMbps: 1, now: () => now });
+  assert.equal(quota.allowBytes('room-a', 100_000), true);
+  assert.equal(quota.allowBytes('room-b', 100_000), false);
+  now = 1000;
+  assert.equal(quota.allowBytes('room-b', 100_000), true);
+});
+
+test('reports active streams and today room creations', () => {
+  let now = 0;
+  const quota = new Quota({ now: () => now });
+  quota.allowRoom('ip-1');
+  quota.allowRoom('ip-1');
+  quota.allowRoom('ip-2');
+  quota.allowStream('room-a', 'ip-1');
+  quota.allowStream('room-b', 'ip-2');
+
+  assert.deepEqual(quota.stats(), { roomsToday: 3, activeStreams: 2 });
+  now = 86_400_000;
+  assert.deepEqual(quota.stats(), { roomsToday: 0, activeStreams: 2 });
+});

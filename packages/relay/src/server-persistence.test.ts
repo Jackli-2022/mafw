@@ -30,6 +30,32 @@ async function hello(controlPort: number, roomId: string, routeSecret: string, r
   return reply;
 }
 
+test('admin /metrics exposes room and stream counters', async () => {
+  const relay = createRelayServer({
+    domain: 'relay.example.com',
+    listenHost: '127.0.0.1',
+    tlsPort: 0,
+    controlPort: 0,
+    adminPort: 0,
+  });
+  await relay.start();
+  const roomId = newRoomId();
+  relay.registry.claim({ roomId, roomToken: 't'.repeat(64), routeSecret: newRouteSecret() });
+  relay.registry.attachHost(roomId, 'host-1');
+  relay.quota.allowRoom('127.0.0.1');
+  relay.quota.allowStream(roomId, '127.0.0.1');
+
+  const res = await fetch(`http://127.0.0.1:${relay.ports().admin}/metrics`);
+  assert.equal(res.status, 200);
+  const text = await res.text();
+  assert.match(text, /relay_rooms_total 1/);
+  assert.match(text, /relay_rooms_online 1/);
+  assert.match(text, /relay_room_creations_today 1/);
+  assert.match(text, /relay_streams_active 1/);
+
+  await relay.stop();
+});
+
 test('sqlite room claim survives a relay restart', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-relay-persist-'));
   const dbPath = path.join(dir, 'relay.db');

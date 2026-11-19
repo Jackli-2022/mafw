@@ -3,6 +3,7 @@ export interface QuotaOptions {
   streamsPerRoom?: number;
   streamsPerIp?: number;
   roomMbps?: number;
+  globalMbps?: number;
   now?: () => number;
 }
 
@@ -11,18 +12,21 @@ export class Quota {
   private readonly maxStreamsPerRoom: number;
   private readonly maxStreamsPerIp: number;
   private readonly bytesPerSecond: number;
+  private readonly globalBytesPerSecond: number;
   private readonly now: () => number;
 
   private readonly rooms = new Map<string, { day: number; count: number }>();
   private readonly roomStreams = new Map<string, number>();
   private readonly ipStreams = new Map<string, number>();
   private readonly bytes = new Map<string, { second: number; used: number }>();
+  private globalBytes: { second: number; used: number } = { second: -1, used: 0 };
 
   constructor(opts: QuotaOptions = {}) {
     this.roomsPerIpPerDay = opts.roomsPerIpPerDay ?? 5;
     this.maxStreamsPerRoom = opts.streamsPerRoom ?? 32;
     this.maxStreamsPerIp = opts.streamsPerIp ?? 8;
     this.bytesPerSecond = Math.floor(((opts.roomMbps ?? 2) * 1_000_000) / 8);
+    this.globalBytesPerSecond = Math.floor(((opts.globalMbps ?? 4) * 1_000_000) / 8);
     this.now = opts.now ?? Date.now;
   }
 
@@ -57,14 +61,26 @@ export class Quota {
 
   allowBytes(roomId: string, bytes: number): boolean {
     const second = Math.floor(this.now() / 1000);
-    const bucket = this.bytes.get(roomId);
-    if (!bucket || bucket.second !== second) {
-      if (bytes > this.bytesPerSecond) return false;
-      this.bytes.set(roomId, { second, used: bytes });
-      return true;
-    }
-    if (bucket.used + bytes > this.bytesPerSecond) return false;
-    bucket.used += bytes;
+    const roomBucket = this.bytes.get(roomId);
+    const roomUsed = roomBucket?.second === second ? roomBucket.used : 0;
+    const globalUsed = this.globalBytes.second === second ? this.globalBytes.used : 0;
+
+    if (bytes > this.bytesPerSecond - roomUsed) return false;
+    if (bytes > this.globalBytesPerSecond - globalUsed) return false;
+
+    this.bytes.set(roomId, { second, used: roomUsed + bytes });
+    this.globalBytes = { second, used: globalUsed + bytes };
     return true;
+  }
+
+  stats(): { roomsToday: number; activeStreams: number } {
+    const day = Math.floor(this.now() / 86_400_000);
+    let roomsToday = 0;
+    for (const bucket of this.rooms.values()) {
+      if (bucket.day === day) roomsToday += bucket.count;
+    }
+    let activeStreams = 0;
+    for (const count of this.roomStreams.values()) activeStreams += count;
+    return { roomsToday, activeStreams };
   }
 }

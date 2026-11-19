@@ -108,6 +108,14 @@ export class RoomRegistry {
     return Boolean(this.rooms.get(roomId)?.hostConnectionId);
   }
 
+  stats(): { total: number; online: number } {
+    let online = 0;
+    for (const record of this.rooms.values()) {
+      if (record.hostConnectionId) online++;
+    }
+    return { total: this.rooms.size, online };
+  }
+
   routeSecretMatches(roomId: string, routeSecret: string): boolean {
     const record = this.rooms.get(roomId);
     return Boolean(record && sameHex(record.routeSecretHash, hashSecret(routeSecret)));

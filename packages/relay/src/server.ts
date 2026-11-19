@@ -64,9 +64,31 @@ export function createRelayServer(opts: RelayServerOptions): RelayServer {
       if (ports) return;
 
       admin = http.createServer((req, res) => {
-        if (req.method === 'GET' && req.url === '/health') {
+        const path = (req.url || '').split('?')[0];
+        if (req.method === 'GET' && path === '/health') {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ status: 'ok' }));
+          return;
+        }
+        if (req.method === 'GET' && path === '/metrics') {
+          const rooms = registry.stats();
+          const quotaStats = quota.stats();
+          res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4' });
+          res.end([
+            '# HELP relay_rooms_total Total room claims (online + offline).',
+            '# TYPE relay_rooms_total gauge',
+            `relay_rooms_total ${rooms.total}`,
+            '# HELP relay_rooms_online Rooms with a live host connection.',
+            '# TYPE relay_rooms_online gauge',
+            `relay_rooms_online ${rooms.online}`,
+            '# HELP relay_room_creations_today Room creations counted today.',
+            '# TYPE relay_room_creations_today gauge',
+            `relay_room_creations_today ${quotaStats.roomsToday}`,
+            '# HELP relay_streams_active Active relay streams.',
+            '# TYPE relay_streams_active gauge',
+            `relay_streams_active ${quotaStats.activeStreams}`,
+            '',
+          ].join('\n'));
           return;
         }
         res.writeHead(404);

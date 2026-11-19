@@ -76,3 +76,13 @@ test('reloads claims from a persistent store', () => {
   second.release(input.roomId);
   assert.equal(new RoomRegistry(store).get(input.roomId), undefined);
 });
+
+test('reports total and online room counts', () => {
+  const registry = new RoomRegistry();
+  const a = claimInput();
+  const b = claimInput();
+  registry.claim(a);
+  registry.claim(b);
+  registry.attachHost(a.roomId, 'host-1');
+  assert.deepEqual(registry.stats(), { total: 2, online: 1 });
+});
