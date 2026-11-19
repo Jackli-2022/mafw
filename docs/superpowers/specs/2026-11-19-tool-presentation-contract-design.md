@@ -231,19 +231,20 @@ ToolRegistry.entry(name)                  // 只读快照，调试/测试用
 ### 4.2 折叠行长文本
 
 - 折叠行只有一行：`title` 不收缩，`object` 占剩余空间。
-- `object` 超长时**渐隐**，不用 `text-overflow: ellipsis` 硬切：
+- `object` 超长时**只在箭头前渐隐**，不用 `text-overflow: ellipsis` 硬切：
   ```css
   .tc-object {
     flex: 1 1 auto;
     min-width: 0;
     overflow: hidden;
     white-space: nowrap;
-    mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 8px), transparent);
   }
   ```
 - chevron（`chevron-down`）在 mask 之外，固定右侧；`meta` badge 也在 mask 之外，`object` 渐隐到 meta 前。
 - 展开态仍保留同一行；完整对象在展开体里，不给 `object` 加裸 `title`（AGENTS.md 禁止裸 `title`）。
-- 渐隐宽度默认 20px；太短看不出、太长会吃掉信息。窄窗下 object 可以继续缩，chevron 不缩。
+- 渐隐区默认 **8px**，紧贴 chevron；不要提前渐隐（20px 会吃掉可读字符）。窄窗下 object 可以继续缩，chevron 不缩。
+
 
 ## 5. 迁移波次
 
