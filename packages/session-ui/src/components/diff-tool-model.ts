@@ -19,6 +19,11 @@ export function canonicalMetadataFiles(metadata: any): DiffMetadataFile[] {
   return files.filter((f: any) => f && typeof f === "object" && typeof f.file === "string" && f.file)
 }
 
+/** True for forward- and backslash paths that contain a directory segment. */
+export function hasDirectory(path: string): boolean {
+  return /[\\/]/.test(path)
+}
+
 /** Line count for a write body; a trailing newline does not invent a line. */
 export function contentLineCount(text: unknown): number {
   if (typeof text !== "string" || text.length === 0) return 0

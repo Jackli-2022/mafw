@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { canonicalMetadataFiles, contentLineCount, diffMeta } from "./diff-tool-model"
+import { canonicalMetadataFiles, contentLineCount, diffMeta, hasDirectory } from "./diff-tool-model"
 
 describe("diff tool model", () => {
   test("keeps only canonical metadata files", () => {
@@ -22,5 +22,11 @@ describe("diff tool model", () => {
     expect(diffMeta(3, 0)).toEqual([{ text: "+3", tone: "ok" }])
     expect(diffMeta(0, 3)).toEqual([{ text: "-3", tone: "err" }])
     expect(diffMeta(0, 0)).toBeUndefined()
+  })
+
+  test("detects a directory on forward and backslash paths", () => {
+    expect(hasDirectory("src/a.ts")).toBe(true)
+    expect(hasDirectory("C:\\repo\\src\\a.ts")).toBe(true)
+    expect(hasDirectory("a.ts")).toBe(false)
   })
 })

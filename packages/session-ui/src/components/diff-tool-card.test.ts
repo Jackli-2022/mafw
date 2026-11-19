@@ -17,4 +17,11 @@ describe("diff card bodies", () => {
     expect(src).toContain("DiagnosticsDisplay")
     expect(src).toContain("ToolFileAccordion")
   })
+
+  test("shows a directory for Windows paths and does not seed a deleted file open", () => {
+    expect(src).toContain("hasDirectory(props.path)")
+    expect(src).toContain("hasDirectory(file.file)")
+    expect(src).toContain('defaultOpen={single()!.status !== "deleted"}')
+    expect(src).toContain("props.defaultOpen === false ? [] : [value()]")
+  })
 })

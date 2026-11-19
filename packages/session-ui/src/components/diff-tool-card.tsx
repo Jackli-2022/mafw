@@ -14,7 +14,7 @@ import { checksum } from "../util/encode"
 import { readPathInput } from "./tool-canonical"
 import { patchFiles } from "./apply-patch-file"
 import { resolveFileDiff } from "./session-diff"
-import { canonicalMetadataFiles } from "./diff-tool-model"
+import { canonicalMetadataFiles, hasDirectory } from "./diff-tool-model"
 import type { ToolProps } from "./message-part"
 
 interface Diagnostic {
@@ -56,7 +56,12 @@ function DiagnosticsDisplay(props: { diagnostics: Diagnostic[] }): JSX.Element {
   )
 }
 
-export function ToolFileAccordion(props: { path: string; actions?: JSX.Element; children: JSX.Element }) {
+export function ToolFileAccordion(props: {
+  path: string
+  actions?: JSX.Element
+  defaultOpen?: boolean
+  children: JSX.Element
+}) {
   const value = createMemo(() => props.path || "tool-file")
 
   return (
@@ -64,7 +69,7 @@ export function ToolFileAccordion(props: { path: string; actions?: JSX.Element; 
       multiple
       data-scope="apply-patch"
       style={{ "--sticky-accordion-offset": "calc(32px + var(--tool-content-gap))" }}
-      defaultValue={[value()]}
+      defaultValue={props.defaultOpen === false ? [] : [value()]}
     >
       <Accordion.Item value={value()}>
         <StickyAccordionHeader>
@@ -73,7 +78,7 @@ export function ToolFileAccordion(props: { path: string; actions?: JSX.Element; 
               <div data-slot="apply-patch-file-info">
                 <FileIcon node={{ path: props.path, type: "file" }} />
                 <div data-slot="apply-patch-file-name-container">
-                  <Show when={props.path.includes("/")}>
+                  <Show when={hasDirectory(props.path)}>
                     <span data-slot="apply-patch-directory">{`\u202A${getDirectory(props.path)}\u202C`}</span>
                   </Show>
                   <span data-slot="apply-patch-filename">{getFilename(props.path)}</span>
@@ -253,7 +258,7 @@ export function ApplyPatchBody(props: ToolProps) {
                             <div data-slot="apply-patch-file-info">
                               <FileIcon node={{ path: file.file, type: "file" }} />
                               <div data-slot="apply-patch-file-name-container">
-                                <Show when={file.file.includes("/")}>
+                                <Show when={hasDirectory(file.file)}>
                                   <span data-slot="apply-patch-directory">{`\u202A${getDirectory(file.file)}\u202C`}</span>
                                 </Show>
                                 <span data-slot="apply-patch-filename">{getFilename(file.file)}</span>
@@ -311,6 +316,7 @@ export function ApplyPatchBody(props: ToolProps) {
       <div data-component="apply-patch-tool" data-file-path={single()!.file}>
         <ToolFileAccordion
           path={single()!.file}
+          defaultOpen={single()!.status !== "deleted"}
           actions={
             <Switch>
               <Match when={single()!.status === "added"}>
