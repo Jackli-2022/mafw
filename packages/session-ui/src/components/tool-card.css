@@ -1,0 +1,84 @@
+.mafw-tool-card {
+  --mafw-tool-content-left: 6px;
+}
+.mafw-tool-card-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  max-height: 28px;
+  padding: 2px 6px;
+  margin: 0 -6px;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.mafw-tool-card-trigger:hover {
+  background: var(--surface-base-hover);
+}
+.mafw-tool-card-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.mafw-tool-card-title {
+  flex: none;
+  font-size: 11px;
+  font-weight: 550;
+  line-height: 1.45;
+  color: var(--text-strong);
+}
+.mafw-tool-card-object {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  mask-image: linear-gradient(to right, #000 calc(100% - 8px), transparent);
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 8px), transparent);
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--text-weak);
+}
+.mafw-tool-card-meta {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--text-weaker);
+  font-variant-numeric: tabular-nums;
+}
+.mafw-tool-card-meta[data-tone="ok"] { color: var(--success-text); }
+.mafw-tool-card-meta[data-tone="warn"] { color: var(--warning-text); }
+.mafw-tool-card-meta[data-tone="err"] { color: var(--danger-text); }
+.mafw-tool-card-trigger > [data-slot="collapsible-arrow"] {
+  flex: none;
+  margin-left: 2px;
+}
+.mafw-tool-card-body {
+  margin: 2px 0 4px;
+  padding-left: var(--mafw-tool-content-left);
+}
+.mafw-tool-card-default pre,
+.mafw-tool-card-pre {
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: var(--text-weak);
+  white-space: pre-wrap;
+}
+.mafw-tool-card-label {
+  margin-top: 4px;
+  font-size: 9.5px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--text-weaker);
+}
+.mafw-tool-card-empty {
+  font-size: 10.5px;
+  color: var(--text-weaker);
+}
+.mafw-tool-card[data-status="error"] .mafw-tool-card-title {
+  color: var(--danger-text);
+}
