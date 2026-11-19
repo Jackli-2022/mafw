@@ -9104,6 +9104,7 @@ html[data-theme="light"] body {
 .mafw-automations-form {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   gap: 8px;
   margin-bottom: 16px;
 }

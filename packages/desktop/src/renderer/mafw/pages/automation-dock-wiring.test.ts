@@ -16,8 +16,13 @@ test("AutomationsPage has a compact dock mode with a compact header", () => {
 
 test("automation form fields are class-driven, not fixed inline widths", () => {
   const page = read("Automations.tsx")
+  const css = read("../mafw.css")
   assert.match(page, /class="mafw-automations-field/)
   assert.doesNotMatch(page, /style=\{\{ width: "\d+px" \}\}/)
+  // `.mafw-card` centers its children; the form must stretch rows or the
+  // compact fields shrink-wrap instead of filling the dock.
+  assert.match(css, /\.mafw-automations-form \{[^}]*align-items: stretch;/)
+  assert.match(css, /\.mafw-automations-page\.is-compact \.mafw-automations-field \{[^}]*width: 100%;/)
 })
 
 test("automations opens in the right workbench from the palette and renderPage", () => {

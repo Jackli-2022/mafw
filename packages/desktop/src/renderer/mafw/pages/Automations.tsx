@@ -119,19 +119,20 @@ export function AutomationsPage(props: { compact?: boolean } = {}) {
             <TextInputV2 class="mafw-automations-field mafw-automations-field--short" value={fTimezone()} onInput={e => setFTimezone(e.currentTarget.value)} placeholder="时区（Asia/Shanghai）" />
           </div>
           <div class="mafw-automations-form-row">
-            <SelectV2
-              class="mafw-automations-field mafw-automations-field--short"
-              current={fAction() === "goal"
-                ? { value: "goal", label: "goal（直接建 Goal）" }
-                : { value: "triage", label: "triage（建议确认）" }}
-              value={(x: { value: string; label: string }) => x.value}
-              label={(x: { value: string; label: string }) => x.label}
-              onSelect={(v: any) => setFAction(v?.value ?? "triage")}
-              options={[
-                { value: "triage", label: "triage（建议确认）" },
-                { value: "goal", label: "goal（直接建 Goal）" },
-              ]}
-            />
+            <div class="mafw-automations-field mafw-automations-field--short">
+              <SelectV2
+                current={fAction() === "goal"
+                  ? { value: "goal", label: "goal（直接建 Goal）" }
+                  : { value: "triage", label: "triage（建议确认）" }}
+                value={(x: { value: string; label: string }) => x.value}
+                label={(x: { value: string; label: string }) => x.label}
+                onSelect={(v: any) => setFAction(v?.value ?? "triage")}
+                options={[
+                  { value: "triage", label: "triage（建议确认）" },
+                  { value: "goal", label: "goal（直接建 Goal）" },
+                ]}
+              />
+            </div>
             <TextInputV2 class="mafw-automations-field mafw-automations-field--wide" value={fTemplate()} onInput={e => setFTemplate(e.currentTarget.value)} placeholder="模板文案（可选）" />
             <TextInputV2 class="mafw-automations-field mafw-automations-field--short" value={fSkill()} onInput={e => setFSkill(e.currentTarget.value)} placeholder="执行 skill（可选）" />
             <TextInputV2 class="mafw-automations-field mafw-automations-field--tiny" value={fMaxLoops()} onInput={e => setFMaxLoops(e.currentTarget.value)} placeholder="maxLoops" />
