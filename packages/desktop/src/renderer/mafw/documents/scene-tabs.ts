@@ -4,8 +4,9 @@ import { createSignal } from "solid-js"
 import type { DocumentTabIcon } from "../document-frame-model"
 import type { Scope, SubjectRef } from "../focus/focus-model"
 import { subjectKey } from "../focus/focus-model"
+import { WORKBENCH_PAGE_META, isWorkbenchPageId } from "../focus/workbench-pages"
 
-export type SceneSubject = Extract<SubjectRef, { kind: "world" | "goal" | "terminal" | "plugin" | "memory" }>
+export type SceneSubject = Extract<SubjectRef, { kind: "world" | "goal" | "terminal" | "plugin" | "memory" | "page" }>
 
 export type SceneTab = {
   id: string
@@ -62,11 +63,13 @@ export function sceneTabId(subject: SceneSubject): string {
       return `scene:plugin:${subject.package}:${subject.panel}`
     case "memory":
       return "scene:memory"
+    case "page":
+      return `scene:page:${subject.id}`
   }
 }
 
 export function isPersistentSceneSubject(subject: SceneSubject): boolean {
-  return subject.kind === "world" || subject.kind === "goal" || subject.kind === "memory"
+  return subject.kind === "world" || subject.kind === "goal" || subject.kind === "memory" || subject.kind === "page"
 }
 
 function defaultLabel(subject: SceneSubject): string {
@@ -81,6 +84,8 @@ function defaultLabel(subject: SceneSubject): string {
       return subject.panel
     case "memory":
       return "记忆"
+    case "page":
+      return WORKBENCH_PAGE_META[subject.id].label
   }
 }
 
@@ -96,7 +101,14 @@ function defaultIcon(subject: SceneSubject): DocumentTabIcon {
       return "plugin"
     case "memory":
       return "memory"
+    case "page":
+      return WORKBENCH_PAGE_META[subject.id].icon as DocumentTabIcon
   }
+}
+
+/** 场景 subject 的 tab 图标（供 shell 建 tab 时复用，避免把 kind 当图标）。 */
+export function sceneTabIconFor(subject: SceneSubject): DocumentTabIcon {
+  return defaultIcon(subject)
 }
 
 const [tabs, setTabs] = createSignal<SceneTab[]>([])
@@ -106,7 +118,7 @@ export function sceneTabs(): SceneTab[] {
 }
 
 export function sceneTabForSubject(subject: SubjectRef): SceneTab | null {
-  if (subject.kind !== "world" && subject.kind !== "goal" && subject.kind !== "terminal" && subject.kind !== "plugin" && subject.kind !== "memory") {
+  if (subject.kind !== "world" && subject.kind !== "goal" && subject.kind !== "terminal" && subject.kind !== "plugin" && subject.kind !== "memory" && subject.kind !== "page") {
     return null
   }
   const id = sceneTabId(subject)
@@ -169,6 +181,7 @@ function isSceneSubject(value: unknown): value is SceneSubject {
       typeof value.panel === "string" && value.panel.length > 0
   }
   if (value.kind === "memory") return true
+  if (value.kind === "page") return isWorkbenchPageId(value.id)
   return false
 }
 
@@ -186,6 +199,7 @@ function isScope(value: unknown): value is Scope {
 
 const ICONS: ReadonlySet<DocumentTabIcon> = new Set([
   "file", "globe", "review", "world", "goal", "terminal", "plugin", "memory",
+  "checklist", "warning", "sliders", "mcp", "settings-gear",
 ])
 
 function parseSnapshot(raw: string | null): SceneSnapshot | null {

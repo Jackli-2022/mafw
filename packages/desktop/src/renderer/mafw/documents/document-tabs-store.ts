@@ -245,6 +245,15 @@ export function activateDocumentTab(id: string): void {
   persistOrder()
 }
 
+/** 清除 active 高亮（可限定 id）：恢复快照时丢弃没有对应焦点的 page tab。 */
+export function clearActiveDocumentTab(id?: string): void {
+  if (activeId() === null) return
+  if (id !== undefined && activeId() !== id) return
+  setActiveId(null)
+  desiredActiveId = null
+  persistOrder()
+}
+
 /** 新打开的 diff 可能早于 store effect 出现；等 entry 落位后再激活。 */
 export function requestDocumentActivation(id: string): void {
   desiredActiveId = id

@@ -29,10 +29,13 @@ test("WorkbenchShell is focus-only", () => {
   }
 })
 
-test("FocusStage dispatches world, goal, memory, diff and plugin", () => {
+test("FocusStage dispatches world, goal, memory, page, diff and plugin", () => {
   assert.match(stage, /kind\(\) === "world"/)
   assert.match(stage, /kind\(\) === "goal"/)
   assert.match(stage, /kind\(\) === "memory"/)
+  assert.match(stage, /kind\(\) === "page"/)
+  assert.match(stage, /renderPage\?: \(id: WorkbenchPageId\) => JSX\.Element/)
+  assert.match(shell, /renderPage\?: \(id: WorkbenchPageId\) => JSX\.Element/)
   assert.doesNotMatch(stage, /kind\(\) === "changeSet"/)
   assert.match(stage, /kind\(\) === "plugin"/)
   assert.match(stage, /DiffDocumentView|DocumentStage/)

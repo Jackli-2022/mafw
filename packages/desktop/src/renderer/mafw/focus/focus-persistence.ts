@@ -9,6 +9,7 @@ import {
   type WorkbenchState,
   type WorldId,
 } from "./focus-model"
+import { isWorkbenchPageId } from "./workbench-pages"
 
 export type FocusStorage = {
   getItem(key: string): string | null
@@ -94,6 +95,10 @@ function isSubject(value: unknown): value is SubjectRef {
         value.id.length > 0 &&
         (value.rel === undefined || typeof value.rel === "string")
       )
+    case "memory":
+      return true
+    case "page":
+      return isWorkbenchPageId(value.id)
     default:
       return false
   }

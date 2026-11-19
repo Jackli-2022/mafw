@@ -8992,6 +8992,17 @@ html[data-theme="light"] body {
   flex: 1;
   min-width: 0;
 }
+.mafw-focus-page-stage {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+.mafw-focus-page-stage > * {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
 .mafw-memory-page.is-compact {
   flex: 1;
   min-width: 0;

@@ -226,3 +226,33 @@ test("old snapshots with lens still load; lens is ignored", () => {
   assert.equal(loaded?.stack[0]?.subject.kind, "file")
   assert.equal("lens" in (loaded?.stack[0] ?? {}), false)
 })
+
+test("page and memory focuses round-trip; unknown page ids are dropped", () => {
+  const io = fakeStorage()
+  resetFocusPersistence()
+  configureFocusStorage(io)
+  let state = openSubject(createWorkbenchState("w1"), worldScope, { kind: "memory" })
+  state = openSubject(state, worldScope, { kind: "page", id: "config" })
+  saveFocusState(state)
+  flushFocusPersistence("w1")
+
+  resetFocusPersistence()
+  configureFocusStorage(io)
+  const loaded = loadFocusState("w1")
+  assert.deepEqual(loaded?.stack.map((focus) => focus.subject), [
+    { kind: "memory" },
+    { kind: "page", id: "config" },
+  ])
+
+  io.data.set("mafw-focus:v1:w2", JSON.stringify({
+    v: 1,
+    stack: [
+      { scope: { kind: "world", worldId: "w2" }, subject: { kind: "page", id: "retired" }, place: {} },
+      { scope: { kind: "world", worldId: "w2" }, subject: { kind: "memory" }, place: {} },
+    ],
+    kept: [],
+  }))
+  resetFocusPersistence()
+  configureFocusStorage(io)
+  assert.deepEqual(loadFocusState("w2")?.stack.map((focus) => focus.subject.kind), ["memory"])
+})

@@ -38,6 +38,14 @@ test("openSubject pushes a new focus", () => {
   assert.equal(next.stack[0]!.place.selection, undefined)
 })
 
+test("page subject has a stable key and opens on the world scope", () => {
+  const page: SubjectRef = { kind: "page", id: "triage" }
+  assert.equal(subjectKey(page), "page:triage")
+  const state = openSubject(createWorkbenchState("w1"), worldScope, page)
+  assert.equal(state.stack.at(-1)!.subject.kind, "page")
+  assert.equal(state.stack.at(-1)!.scope.kind, "world")
+})
+
 test("memory subject has a stable key and opens on the world scope", () => {
   const memory: SubjectRef = { kind: "memory" }
   assert.equal(subjectKey(memory), "memory")

@@ -1,5 +1,7 @@
 // 工作台焦点模型：一个焦点 = scope + subject + place。
 // 这里只放纯函数；UI、存储、Solid 都不属于本模块。
+import type { WorkbenchPageId } from "./workbench-pages"
+
 export type WorldId = string
 
 export type Scope =
@@ -15,6 +17,7 @@ export type SubjectRef =
   | { kind: "plugin"; package: string; panel: string }
   | { kind: "changeset"; id: string; rel?: string }
   | { kind: "memory" }
+  | { kind: "page"; id: WorkbenchPageId }
 
 export type Place = {
   scroll?: number
@@ -48,6 +51,8 @@ export function subjectKey(subject: SubjectRef): string {
       return `changeset:${subject.id}`
     case "memory":
       return "memory"
+    case "page":
+      return `page:${subject.id}`
   }
 }
 

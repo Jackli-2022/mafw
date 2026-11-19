@@ -11,6 +11,7 @@ import { pluginSurfaceId, type PluginSurfaceId } from "../plugins/surface-id"
 import type { Focus } from "../focus/focus-model"
 import type { FrameView } from "../focus/frame-view"
 import type { FocusOpenRequest } from "../focus/focus-open"
+import type { WorkbenchPageId } from "../focus/workbench-pages"
 import type { PickerItem } from "../focus/picker-model"
 import type { PluginWebSurfaceView } from "../plugins/plugin-web-surface"
 import type { FileDiffEntry } from "./DiffReviewPanel"
@@ -60,6 +61,7 @@ export type WorkbenchShellProps = {
   renderGoal?: () => JSX.Element
   renderWorld?: () => JSX.Element
   renderMemory?: () => JSX.Element
+  renderPage?: (id: WorkbenchPageId) => JSX.Element
   activeTabId?: string | null
   onDocumentSelect?: (id: string) => void
   onDocumentClose?: (id: string) => void
@@ -140,6 +142,7 @@ export function WorkbenchShell(props: WorkbenchShellProps): JSX.Element {
             renderGoal={props.renderGoal}
             renderWorld={props.renderWorld}
             renderMemory={props.renderMemory}
+            renderPage={props.renderPage}
           />
           <PluginSurfaceStage
             activeSurfaceId={activePluginSurfaceId()}

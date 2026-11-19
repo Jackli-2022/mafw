@@ -7,6 +7,7 @@ import type { AnnotationAnchor } from "../../../shared/annotation-types"
 import type { PluginWebSurfaceView } from "../plugins/plugin-web-surface"
 import type { Focus } from "../focus/focus-model"
 import type { FocusOpenRequest } from "../focus/focus-open"
+import type { WorkbenchPageId } from "../focus/workbench-pages"
 import { stageKindFor } from "../focus/stage-dispatch"
 import "../focus-goal-stage.css"
 
@@ -50,9 +51,14 @@ export function FocusStage(props: {
   renderGoal?: () => JSX.Element
   renderWorld?: () => JSX.Element
   renderMemory?: () => JSX.Element
+  renderPage?: (id: WorkbenchPageId) => JSX.Element
 }): JSX.Element {
   const kind = () => stageKindFor(props.focus)
   const isDocument = () => kind() === "editor" || kind() === "browser" || kind() === "changeset"
+  const pageId = () => {
+    const subject = props.focus.subject
+    return subject.kind === "page" ? subject.id : null
+  }
   const pluginId = () => {
     const subject = props.focus.subject
     return subject.kind === "plugin" ? `plugin:${subject.package}:${subject.panel}` : null
@@ -108,6 +114,12 @@ export function FocusStage(props: {
         <Match when={kind() === "memory"}>
           <div class="mafw-focus-memory-stage">
             {props.renderMemory?.() ?? <DockEmpty icon="brain" text="记忆待接入" />}
+          </div>
+        </Match>
+
+        <Match when={kind() === "page"}>
+          <div class="mafw-focus-page-stage">
+            {pageId() ? (props.renderPage?.(pageId()!) ?? <DockEmpty icon="layout-grid" text="页面待接入" />) : null}
           </div>
         </Match>
       </Switch>

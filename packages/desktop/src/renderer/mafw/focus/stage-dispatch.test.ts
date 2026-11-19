@@ -30,6 +30,11 @@ test("memory subjects dispatch to the memory stage", () => {
   assert.deepEqual(stageActionFor(focus({ kind: "memory" })), { kind: "none" })
 })
 
+test("page subjects dispatch to the page stage", () => {
+  assert.equal(stageKindFor(focus({ kind: "page", id: "triage" })), "page")
+  assert.deepEqual(stageActionFor(focus({ kind: "page", id: "triage" })), { kind: "none" })
+})
+
 test("stageActionFor drives the editor for file subjects", () => {
   assert.deepEqual(stageActionFor(focus(file)), {
     kind: "editor",

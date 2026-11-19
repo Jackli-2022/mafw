@@ -43,6 +43,25 @@ test("scene tab ids are stable per subject", () => {
   assert.equal(sceneTabId({ kind: "terminal", id: "local" }), "scene:terminal:local")
   assert.equal(sceneTabId({ kind: "plugin", package: "mafw", panel: "memory" }), "scene:plugin:mafw:memory")
   assert.equal(sceneTabId({ kind: "memory" }), "scene:memory")
+  assert.equal(sceneTabId({ kind: "page", id: "triage" }), "scene:page:triage")
+})
+
+test("page scene tabs use page meta, are persistent, and restore by world", () => {
+  const storage = fakeStorage()
+  configureSceneTabStorage(storage)
+  switchSceneTabWorld("C:/repo")
+  const tab = openSceneTab({ subject: { kind: "page", id: "triage" }, scope: worldScope })
+  assert.equal(tab.id, "scene:page:triage")
+  assert.equal(tab.label, "分诊")
+  assert.equal(tab.icon, "warning")
+  assert.equal(tab.persistent, true)
+  assert.equal(sceneTabForSubject({ kind: "page", id: "triage" })?.id, "scene:page:triage")
+
+  resetSceneTabsForTests()
+  configureSceneTabStorage(storage)
+  switchSceneTabWorld("C:/repo")
+  assert.deepEqual(sceneTabs().map((item) => item.id), ["scene:page:triage"])
+  assert.equal(sceneTabs()[0]!.label, "分诊")
 })
 
 test("memory scene tab is persistent with a brain icon", () => {

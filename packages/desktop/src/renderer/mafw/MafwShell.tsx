@@ -160,6 +160,7 @@ import { shouldAutoOpenPicker } from "./focus/landing"
 import {
   activeDocumentTabId,
   activateDocumentTab,
+  clearActiveDocumentTab,
   configureDocumentListWorld,
   documentTabs,
   requestCloseDocumentTab,
@@ -183,12 +184,15 @@ import {
   closeSceneTab,
   flushSceneTabs,
   openSceneTab,
+  sceneTabIconFor,
   sceneTabId,
   sceneTabs,
   switchSceneTabWorld,
   type SceneSubject,
 } from "./documents/scene-tabs"
 import { stageActionFor } from "./focus/stage-dispatch"
+import { WORKBENCH_PAGE_META, isStalePageActiveTab, type WorkbenchPageId } from "./focus/workbench-pages"
+import { DockEmpty } from "./components/dock-panel"
 import { openGoalFocus as applyGoalFocus } from "./focus/goal-focus"
 import type { FocusOpenRequest } from "./focus/focus-open"
 import {
@@ -2683,6 +2687,10 @@ export function MafwShell() {
 
   const activeFocus = (): Focus | null =>
     focusState().stack[focusState().stack.length - 1] ?? null
+  const activePageId = (): WorkbenchPageId | null => {
+    const subject = activeFocus()?.subject
+    return subject?.kind === "page" ? subject.id : null
+  }
   const activePluginSurface = (): PluginSurfaceId | null => {
     const subject = activeFocus()?.subject
     return rightDockOpen() && subject?.kind === "plugin"
@@ -2740,6 +2748,7 @@ export function MafwShell() {
       : subject.kind === "terminal" ? "终端"
       : subject.kind === "plugin" ? "插件"
       : subject.kind === "memory" ? "记忆"
+      : subject.kind === "page" ? WORKBENCH_PAGE_META[subject.id].label
       : subject.kind === "changeset"
         ? (changeSetDocuments().find((doc) => doc.id === subject.id)?.label ?? "改动")
       : "对象"
@@ -2789,6 +2798,15 @@ export function MafwShell() {
     openSceneTab({ subject: { kind: "memory" }, scope: worldScope, label: "记忆", icon: "memory" })
     setFocusState((state) =>
       openSubject({ ...seedWorldRoot(state, worldScope), worldId }, worldScope, { kind: "memory" }),
+    )
+  }
+  /** 页面（审批 / 分诊 / 自动化 / MCP / 设置）：右工作台的通用焦点对象。 */
+  const openPageFocus = (id: WorkbenchPageId) => {
+    revealWorkbench()
+    const worldScope: Scope = { kind: "world", worldId: currentProject() ?? "unscoped" }
+    openSceneTab({ subject: { kind: "page", id }, scope: worldScope })
+    setFocusState((state) =>
+      selectFocus(seedWorldRoot(state, worldScope), worldScope, { kind: "page", id }),
     )
   }
   const openBrowserFocus = (url: string, opts?: { newTab?: boolean }) => {
@@ -2911,7 +2929,7 @@ export function MafwShell() {
     revealWorkbench()
   }
   const sceneSubjectOf = (subject: Focus["subject"]): SceneSubject | null => {
-    if (subject.kind !== "world" && subject.kind !== "goal" && subject.kind !== "terminal" && subject.kind !== "plugin" && subject.kind !== "memory") {
+    if (subject.kind !== "world" && subject.kind !== "goal" && subject.kind !== "terminal" && subject.kind !== "plugin" && subject.kind !== "memory" && subject.kind !== "page") {
       return null
     }
     return subject
@@ -2921,6 +2939,7 @@ export function MafwShell() {
     if (subject.kind === "terminal") return "终端"
     if (subject.kind === "plugin") return `插件 · ${subject.panel}`
     if (subject.kind === "memory") return "记忆"
+    if (subject.kind === "page") return WORKBENCH_PAGE_META[subject.id].label
     const goal = podStore.detail()?.goals.find((item) => item.goalId === subject.goalId)
     return goal?.title ? `Goal · ${goal.title}` : "Goal"
   }
@@ -2930,7 +2949,7 @@ export function MafwShell() {
     if (!scene) return null
     const id = sceneTabId(scene)
     if (!sceneTabs().some((tab) => tab.id === id)) {
-      openSceneTab({ subject: scene, scope, label: sceneLabelFor(scene), icon: scene.kind })
+      openSceneTab({ subject: scene, scope, label: sceneLabelFor(scene), icon: sceneTabIconFor(scene) })
     }
     return id
   }
@@ -3612,6 +3631,9 @@ export function MafwShell() {
         label: goal?.title ? `Goal · ${goal.title}` : "Goal",
         icon: "goal",
       })
+    }
+    if (isStalePageActiveTab(activeDocumentTabId(), state.stack.map((focus) => focus.subject))) {
+      clearActiveDocumentTab()
     }
     syncStageToFocus(state)
     void validateFocusStack(worldId, state)
@@ -5003,6 +5025,9 @@ export function MafwShell() {
                   }}
                   onOpenReview={() => openChangesFace({ section: "review" })}
                   renderMemory={() => <MemoryPage compact />}
+                  renderPage={(id) => (
+                    <DockEmpty icon={WORKBENCH_PAGE_META[id].icon} text={`${WORKBENCH_PAGE_META[id].label}页待接入`} />
+                  )}
                   renderWorld={() => (
                     <WorldOverviewStage
                       projectDir={currentProject()}

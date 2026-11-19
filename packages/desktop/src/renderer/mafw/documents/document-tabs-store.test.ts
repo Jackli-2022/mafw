@@ -5,6 +5,7 @@ import {
   activeDocumentTab,
   activeDocumentTabId,
   activeDocumentTabKind,
+  clearActiveDocumentTab,
   closeDocumentTabsToRight,
   closeOtherDocumentTabs,
   configureDocumentListWorld,
@@ -111,8 +112,20 @@ test("activate sets active id and kind; unknown ids are ignored", () => {
   assert.equal(activeDocumentTabId(), webId)
 })
 
-test("re-syncing identical tabs does not rewrite the strip", () => {
-  syncFileTabs("C:/repo", [view("a.ts")])
+test("clearActiveDocumentTab drops only the matching active page tab", () => {
+  configureDocumentListWorld("w")
+  openSceneTab({ subject: { kind: "page", id: "triage" }, scope: { kind: "world", worldId: "w" } })
+  activateDocumentTab("scene:page:triage")
+  assert.equal(activeDocumentTabId(), "scene:page:triage")
+
+  clearActiveDocumentTab("scene:world")
+  assert.equal(activeDocumentTabId(), "scene:page:triage")
+
+  clearActiveDocumentTab("scene:page:triage")
+  assert.equal(activeDocumentTabId(), null)
+})
+
+test("re-syncing identical tabs does not rewrite the strip", () => {  syncFileTabs("C:/repo", [view("a.ts")])
   web("w1", "W")
   const first = documentTabs()
 
