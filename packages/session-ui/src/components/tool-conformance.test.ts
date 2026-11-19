@@ -93,20 +93,63 @@ describe("rich presenter conformance", () => {
   })
 })
 
+function parseRegistrations(source: string): Array<{ name?: string; present: boolean }> {
+  return source
+    .split("ToolRegistry.register({")
+    .slice(1)
+    .map((chunk) => {
+      const name = chunk.match(/^\s*name:\s*"([^"]+)"/m)?.[1]
+      const code = chunk.replace(/\/\/[^\n]*/g, "")
+      return { name, present: /\bpresent:\s*(?!undefined\b)/.test(code) }
+    })
+}
+
 describe("first-party registration conformance", () => {
   const componentSource = fs.readFileSync(new URL("./message-part.tsx", import.meta.url), "utf-8")
 
-  test("every non-hidden registration has a presenter", () => {
-    const chunks = componentSource.split("ToolRegistry.register({").slice(1)
+  test("the parser isolates blocks and detects a missing presenter", () => {
+    const synthetic = `ToolRegistry.register({
+  name: "a",
+  render() {}
+})
+ToolRegistry.register({
+  name: "b",
+  present: () => ({})
+})`
+    expect(parseRegistrations(synthetic)).toEqual([
+      { name: "a", present: false },
+      { name: "b", present: true },
+    ])
+  })
+
+  test("every registration is parseable and every non-hidden one has a presenter", () => {
+    const blocks = parseRegistrations(componentSource)
+    expect(blocks).toHaveLength(14)
     const names = new Set<string>()
-    for (const chunk of chunks) {
-      const name = chunk.match(/^\s*name: "([^"]+)"/)?.[1]
-      if (!name) continue
-      names.add(name)
-      if (HIDDEN_TOOLS.has(name)) continue
-      expect(chunk).toContain("present:")
+    for (const block of blocks) {
+      expect(block.name).toBeDefined()
+      names.add(block.name!)
+      if (HIDDEN_TOOLS.has(block.name!)) continue
+      expect(block.present).toBe(true)
     }
-    expect(names.size).toBeGreaterThanOrEqual(13)
+
+    const required = new Set([
+      "read",
+      "list",
+      "glob",
+      "grep",
+      "webfetch",
+      "websearch",
+      "task",
+      "bash",
+      "edit",
+      "write",
+      "apply_patch",
+      "question",
+      "skill",
+      "todowrite",
+    ])
+    expect(names).toEqual(required)
     for (const target of Object.values(TOOL_NAME_ALIASES)) expect(names.has(target)).toBe(true)
   })
 })

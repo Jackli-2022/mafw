@@ -94,10 +94,11 @@ export type ToolFallbackKind = "render" | "presentation" | "generic"
 export function toolFallbackKind(entry?: {
   render?: unknown
   present?: unknown
+  renderCollapsed?: unknown
   renderBody?: unknown
 }): ToolFallbackKind {
   if (entry?.render) return "render"
-  if (entry?.present || entry?.renderBody) return "presentation"
+  if (entry?.present || entry?.renderCollapsed || entry?.renderBody) return "presentation"
   return "generic"
 }
 

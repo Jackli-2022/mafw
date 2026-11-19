@@ -36,6 +36,7 @@ describe("plugin fallback kind", () => {
     expect(toolFallbackKind({ render: () => null })).toBe("render")
     expect(toolFallbackKind({ present: () => ({}) })).toBe("presentation")
     expect(toolFallbackKind({ renderBody: () => null })).toBe("presentation")
+    expect(toolFallbackKind({ renderCollapsed: () => null })).toBe("presentation")
     expect(toolFallbackKind({})).toBe("generic")
     expect(toolFallbackKind(undefined)).toBe("generic")
   })

@@ -51,7 +51,11 @@ export function overrideTool(name: string, render: ToolComponent) {
   }
 }
 
-/** Slot occupancy: every custom presentation slot counts as available. */
+/**
+ * Slot occupancy for plugin claims/overrides: `present` / `render` /
+ * `renderCollapsed` / `renderBody`. Separate from `shouldUsePresentation`
+ * (override-aware); `renderSections` is a body slot, not occupancy.
+ */
 export function hasTool(name: string): boolean {
   const entry = state[name]
   return !!(entry?.present || entry?.render || entry?.renderCollapsed || entry?.renderBody)

@@ -345,7 +345,6 @@ function getDirectory(path: string | undefined) {
   return relativizeProjectPath(_getDirectory(path), data.directory)
 }
 
-import type { IconProps } from "@mafw/ui/icon"
 import { modelName } from "../util/model-name"
 
 const agentTones: Record<string, string> = {

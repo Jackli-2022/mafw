@@ -102,13 +102,10 @@
   color: var(--text-weak);
 }
 
-/* Every tool step renders its registered native card. The drawer only
-   normalises the chrome (11px title, 10.5px target, no family icon, one
-   chevron); each card keeps its own body: diff, terminal, question, family
-   sections, subagent navigation. */
-/* Row, diff, rich, and family tools use ToolCard's own compact tokens
-   (tool-card.css). These scoped rules remain for bespoke MAFW cards and
-   legacy plugin fallbacks. */
+/* Every tool step renders its registered native card. Row, diff, rich, and
+   family tools use ToolCard's own compact tokens (tool-card.css); these
+   scoped rules only remain for bespoke MAFW cards and legacy plugin
+   fallbacks. */
 .mafw-process-step-card {
   position: relative;
   margin: 2px 0 4px;
@@ -143,8 +140,7 @@
 .mafw-process-step-card [data-slot="basic-tool-tool-info-main"] {
   gap: 6px;
 }
-.mafw-process-step-card [data-slot="basic-tool-tool-title"],
-.mafw-process-step-card [data-slot="basic-tool-tool-title"].agent-title {
+.mafw-process-step-card [data-slot="basic-tool-tool-title"] {
   font-size: 11px;
   font-weight: 550;
   line-height: 1.45;
