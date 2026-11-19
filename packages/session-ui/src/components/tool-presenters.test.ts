@@ -260,4 +260,18 @@ describe("rich tool presentations", () => {
     const empty = rich({ tool: "skill", input: { name: "office-editing" }, metadata: {}, status: "completed", output: "" })
     expect(resolvePresentation(presentSkill(empty), empty).expanded.body).toBe("default")
   })
+
+  test("skill derives the name from input.skill or the output header", () => {
+    const fromInput = rich({ tool: "skill", input: { skill: "writing-plans" }, metadata: {}, status: "completed", output: "" })
+    expect(resolvePresentation(presentSkill(fromInput), fromInput).collapsed.title).toBe("Writing-plans")
+
+    const fromOutput = rich({
+      tool: "skill",
+      input: {},
+      metadata: {},
+      status: "completed",
+      output: "# Skill: executing-plans\n\nBody",
+    })
+    expect(resolvePresentation(presentSkill(fromOutput), fromOutput).collapsed.title).toBe("Executing-plans")
+  })
 })

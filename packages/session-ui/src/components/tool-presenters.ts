@@ -227,10 +227,18 @@ export function presentQuestion(ctx: ToolPresentationContext): ToolPresentation 
   }
 }
 
+function skillName(input: Record<string, any>, output: string): string | undefined {
+  if (typeof input.name === "string" && input.name) return input.name
+  if (typeof input.skill === "string" && input.skill) return input.skill
+  const tagged = output.match(/<skill_content[^>]*\bname="([^"]+)"/)?.[1]
+  if (tagged) return tagged
+  return output.match(/^#\s+Skill:\s*(\S+)/m)?.[1]
+}
+
 export function presentSkill(ctx: ToolPresentationContext): ToolPresentation {
   const input = ctx.props.input ?? {}
-  const raw = typeof input.name === "string" && input.name ? input.name : ctx.t("ui.tool.skill")
   const output = typeof ctx.props.output === "string" ? ctx.props.output : ""
+  const raw = skillName(input, output) ?? ctx.t("ui.tool.skill")
   return {
     collapsed: {
       title: raw.charAt(0).toUpperCase() + raw.slice(1),
