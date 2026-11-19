@@ -512,6 +512,19 @@ spec `docs/superpowers/specs/2026-11-19-workbench-pages-design.md`，plan
   `events.sources({projectDir})` 不会返回它们；`buildLeadExternalInbox` 现在按系统 source id 识别 kind
   （`internal` 过滤、`cron` 保留 `Cron` 标签），decision/goal 内部播报不再显示成「外部事件」。
 
+### 输入栏底部信息条：时间 + 会话脉搏（2026-11-20）
+
+- 时间 / 城市 chip 从 composer 上方移到下方最左，composer 随之上移；`.mafw-input-area` 总高基本不变。
+- 底部条是三段 grid（`minmax(0, 1fr) auto minmax(0, 1fr)`）：
+  - **左**：`ContextChip`（`今天 HH:mm · 城市`，点击打开上下文设置）。
+  - **中**：会话脉搏 `缓存命中 x% · N tokens · N tok/s · N 回合`；缓存命中 =
+    `cacheRead / (input + cacheRead)`，tokens 为会话累计，tok/s 取最近一条有 `time.completed` 的
+    assistant 的 `output / duration`（<50ms 与骨架消息跳过），回合数 = 有 token 统计的 assistant 条数。
+    纯函数在 `renderer/mafw/chat/composer-footer-metrics.ts`。
+  - **右**：空槽，留给草稿状态 / 提示等后续信息。
+- 只在有数据时渲染对应指标，新会话不会出现占位 0。
+- `@container (max-width: 430px)` 隐藏左侧时间 chip（避免裁成残字），脉搏仍保持居中。
+
 ### Goal 用户视图与角色连续性（2026-11-11）
 
 Project Agent Workbench 的 Plan A 已完成（Goal / Chat 垂直切片）：
