@@ -501,6 +501,17 @@ spec `docs/superpowers/specs/2026-11-19-workbench-pages-design.md`，plan
   右侧」批量），避免 back / 重启复活已关闭页面；`tabIdForSubject` 只在 tab 实际存在时返回，恢复或被
   MAX_TABS 裁剪的 tab 由 `ensureSceneTabFor` 重建。
 
+### Chat 底部锚定与 Lead 外部事件过滤（2026-11-20）
+
+- **Chat 滚动条顶到底**：`.mafw-session-turn-container` 仍是唯一 scroller；`pinned` 语义不变（用户向上滚即释放）。
+  - 会话切换 / 焦点切换重新锚定（`on([props.focused, sidProp()])`），不再沿用上一个会话的滚动位置。
+  - 新增 `MutationObserver`（childList/subtree/characterData）+ `ResizeObserver`；异步排版（markdown、图片、工具卡、
+    Lead 收件箱）长高时，只要 `pinned` 为真就重新贴底。
+  - rAF 之外加 32ms timer 兜底：Electron 窗口被遮挡 / 最小化时 rAF 暂停，timer 仍能完成贴底。
+- **Lead 外部事件收件箱不再混入 internal**：系统 source（`internal` / `cron`）存在 `project_dir='*'`，
+  `events.sources({projectDir})` 不会返回它们；`buildLeadExternalInbox` 现在按系统 source id 识别 kind
+  （`internal` 过滤、`cron` 保留 `Cron` 标签），decision/goal 内部播报不再显示成「外部事件」。
+
 ### Goal 用户视图与角色连续性（2026-11-11）
 
 Project Agent Workbench 的 Plan A 已完成（Goal / Chat 垂直切片）：
