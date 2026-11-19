@@ -56,7 +56,10 @@ export function computeContextUsage(
 
 export function formatContextTokens(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return "0"
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000_000) {
+    const millions = n / 1_000_000
+    return `${millions.toFixed(1).replace(/\.0$/, "")}M`
+  }
   if (n >= 1000) return `${Math.round(n / 1000)}k`
   return String(Math.round(n))
 }
@@ -69,14 +72,14 @@ export function formatContextUsage(u: ContextUsage): { main: string; tooltip: st
     const pct = subOne ? "<1%" : `${u.percent}%`
     return {
       main: pct,
-      tooltip: `上下文占用 ${formatContextTokens(u.used)} · 上下文容量 ${formatContextTokens(u.total)} · 比率 ${pct}`,
+      tooltip: `上下文占用：${formatContextTokens(u.used)}/${formatContextTokens(u.total)}(${pct})`,
     }
   }
   if (u.used > 0) {
     return {
       main: formatContextTokens(u.used),
-      tooltip: `上下文占用 ${formatContextTokens(u.used)} tokens · 容量未知`,
+      tooltip: `上下文占用：${formatContextTokens(u.used)}（容量未知）`,
     }
   }
-  return { main: "—", tooltip: "上下文: 暂无数据" }
+  return { main: "—", tooltip: "上下文占用：暂无数据" }
 }

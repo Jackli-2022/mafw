@@ -2384,7 +2384,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   const currentModelLabel = createMemo(() => props.model()?.label || modelName())
 
-  // Context usage: last measured assistant message's prompt tokens (input + cache
+  // Context usage: prompt tokens of the last measured assistant (input + cache
   // read/write) vs model context window. `input` alone excludes prompt-cache hits → 0%.
   // 新回合的 assistant 骨架还没有 tokens，必须跳到最近一条已测量消息，否则整轮生成都显示 0%。
   const contextUsage = createMemo(() => {

@@ -31,28 +31,35 @@ describe("formatContextUsage", () => {
   test("有窗口 → 百分比 + 占用 / 容量 / 比率", () => {
     expect(formatContextUsage({ used: 676626, total: 1_000_000, percent: 68 })).toEqual({
       main: "68%",
-      tooltip: "上下文占用 677k · 上下文容量 1.0M · 比率 68%",
+      tooltip: "上下文占用：677k/1M(68%)",
     })
   })
 
   test("窗口未知 → 显示 token 数 + 容量未知", () => {
     expect(formatContextUsage({ used: 1234, total: 0, percent: 0 })).toEqual({
       main: "1k",
-      tooltip: "上下文占用 1k tokens · 容量未知",
+      tooltip: "上下文占用：1k（容量未知）",
     })
   })
 
   test("无数据 → — / 暂无数据", () => {
     expect(formatContextUsage({ used: 0, total: 0, percent: 0 })).toEqual({
       main: "—",
-      tooltip: "上下文: 暂无数据",
+      tooltip: "上下文占用：暂无数据",
     })
   })
 
   test("不足 1% 显示 <1%（避免歧义）", () => {
     expect(formatContextUsage({ used: 1200, total: 1_000_000, percent: 0 })).toEqual({
       main: "<1%",
-      tooltip: "上下文占用 1k · 上下文容量 1.0M · 比率 <1%",
+      tooltip: "上下文占用：1k/1M(<1%)",
+    })
+  })
+
+  test("2^20 窗口显示 1M 而不是 1.0M", () => {
+    expect(formatContextUsage({ used: 206000, total: 1_048_576, percent: 20 })).toEqual({
+      main: "20%",
+      tooltip: "上下文占用：206k/1M(20%)",
     })
   })
 })
