@@ -872,7 +872,10 @@ export function MafwShell() {
         id: "project-work", label: "项目工作", hint: "Work", group: "导航",
         run: () => openProjectWork(),
       },
-      nav("memory", "记忆", "Memory"),
+      {
+        id: "memory", label: "记忆", hint: "Memory", group: "导航",
+        run: () => openMemoryFocus(),
+      },
       nav("approvals", "审批", "Approvals"),
       nav("triage", "分诊", "Triage"),
       nav("automation", "自动化", "Automations"),
