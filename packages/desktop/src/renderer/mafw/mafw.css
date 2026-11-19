@@ -5251,6 +5251,50 @@ html[data-theme="light"] body {
   gap: 0;
   flex: 1;
 }
+/* ── Compact dock mode: no left nav, top section picker, page scrolls ── */
+.mafw-config-layout.is-compact {
+  flex-direction: column;
+  overflow-y: auto;
+}
+.mafw-config-layout.is-compact .mafw-config-nav {
+  display: none;
+}
+.mafw-config-compact-nav {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-raised);
+}
+.mafw-config-compact-nav > * {
+  flex: 1;
+  min-width: 0;
+}
+.mafw-config-layout.is-compact .mafw-config-panel {
+  overflow: visible;
+  min-width: 0;
+  flex: none;
+}
+.mafw-config-layout.is-compact .mafw-config-panel-head {
+  position: static;
+  padding: 16px 14px 12px;
+}
+.mafw-config-layout.is-compact .mafw-config-panel-body {
+  padding: 14px 14px 32px;
+}
+.mafw-config-layout.is-compact .mafw-config-grid-row {
+  flex-wrap: wrap;
+}
+.mafw-config-layout.is-compact .mafw-config-grid-label {
+  width: auto;
+  text-align: left;
+}
+.mafw-config-layout.is-compact input,
+.mafw-config-layout.is-compact textarea,
+.mafw-config-layout.is-compact select {
+  max-width: 100%;
+}
 /* Section card */
 .mafw-config-section {
   background: var(--bg-overlay);

@@ -36,7 +36,7 @@ interface ConfigSection {
 export { isNavKey }
 export type { NavKey }
 
-export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey; theme?: string; onToggleTheme?: () => void; projectDir?: string; sessionID?: string; onCreatePlugin?: () => void; creatorEntry?: { available: boolean; reason?: CreatorEntryReason } }) {
+export function ConfigPage(props: { compact?: boolean; initialSection?: NavKey; theme?: string; onToggleTheme?: () => void; projectDir?: string; sessionID?: string; onCreatePlugin?: () => void; creatorEntry?: { available: boolean; reason?: CreatorEntryReason } }) {
   const [activeNav, setActiveNav] = createSignal<NavKey>(isNavKey(props.initialSection) ? props.initialSection : "gateway")
 
   // ── MAFW raw config ──
@@ -865,6 +865,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
   }
 
   const navDesc = () => navItems().find(n => n.key === activeNav())?.desc ?? ""
+  const navOptions = () => navItems().map((item) => ({ value: item.key, label: item.label }))
 
   return (
     <ErrorBoundary fallback={(err, reset) => (
@@ -885,13 +886,10 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
         onCancel={() => setConfirmReq(null)}
       />
     </Portal>
-    <div class="mafw-config-layout">
-      {/* ── Left Nav ── */}
+    <div class="mafw-config-layout" classList={{ "is-compact": !!props.compact }}>
+      {/* ── Left Nav (full-width only; compact uses the section picker) ── */}
       <nav class="mafw-config-nav">
         <div class="mafw-config-nav-head">
-          {props.onBack && (
-            <ButtonV2 variant="ghost" size="small" onClick={() => props.onBack?.()}>← 返回</ButtonV2>
-          )}
           <span class="mafw-config-nav-title">Settings</span>
         </div>
         <div class="mafw-config-nav-desc" style={{ "padding": "0 16px 12px", "font-size": "11px", "color": "var(--text-4)", "line-height": 1.4 }}>
@@ -919,6 +917,19 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
 
       {/* ── Content Panel ── */}
       <main class="mafw-config-panel">
+        <Show when={props.compact}>
+          <div class="mafw-config-compact-nav">
+            <SelectV2
+              current={navOptions().find((item) => item.value === activeNav()) ?? navOptions()[0]}
+              value={(item: { value: NavKey; label: string }) => item.value}
+              label={(item: { value: NavKey; label: string }) => item.label}
+              options={navOptions()}
+              onSelect={(item: { value: NavKey; label: string } | null) => {
+                if (item) setActiveNav(item.value)
+              }}
+            />
+          </div>
+        </Show>
         <div class="mafw-config-panel-head">
           <h2 class="mafw-config-panel-title">
             <Icon name={navItems().find(n => n.key === activeNav())?.icon ?? "help"} />

@@ -20,5 +20,5 @@ test("the execution drawer is gone", () => {
 })
 
 test("usage opens the config usage page", () => {
-  assert.match(shell, /setConfigSection\("usage"\)/)
+  assert.match(shell, /openConfigPage\("usage"\)/)
 })

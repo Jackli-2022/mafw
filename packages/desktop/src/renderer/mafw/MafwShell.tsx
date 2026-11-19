@@ -284,7 +284,6 @@ if (typeof window !== "undefined") {
 
 export function MafwShell() {
   const [activeTab, setActiveTab] = createSignal<NavTab>("chat")
-  const [showConfig, setShowConfig] = createSignal(false)
   const [notificationsOpen, setNotificationsOpen] = createSignal(false)
   const [configSection, setConfigSection] = createSignal<NavKey | undefined>(undefined)
   const [gwStatus, setGwStatus] = createSignal<{ state: string; port: number | null; url?: string | null } | null>(null)
@@ -423,7 +422,6 @@ export function MafwShell() {
   // view/tab highlight change). Loads its data into the store so the pane
   // renders history; readOnly follows from store.session[child].parentID.
   const openSubagentSession = async (childID: string) => {
-    setShowConfig(false)
     setActiveTab("chat")
     setShowWelcome(false)
     const parentID = activeSessionId()
@@ -626,7 +624,6 @@ export function MafwShell() {
   const openSessionTab = (sid: string, title?: string, lead?: boolean, metadata?: any, options?: { activate?: boolean }) => {
     const activate = options?.activate !== false
     if (activate) {
-      setShowConfig(false)
       setActiveTab("chat")
       setShowWelcome(false)
     }
@@ -683,7 +680,6 @@ export function MafwShell() {
   // Project-level Lead is the project conversation. Opening it is the explicit
   // point where a missing Pod may be created; background polling never creates one.
   const openLeadEntry = async (): Promise<boolean> => {
-    setShowConfig(false)
     setActiveTab("chat")
     setShowWelcome(false)
     const project = currentProject()
@@ -868,7 +864,7 @@ export function MafwShell() {
   const paletteItems = (): PaletteItem[] => {
     const nav = (id: NavTab, label: string, hint: string): PaletteItem => ({
       id: `tab-${id}`, label, hint, group: "导航",
-      run: () => { setShowConfig(false); setShowWelcome(false); setActiveTab(id) },
+      run: () => { setShowWelcome(false); setActiveTab(id) },
     })
     return [
       nav("chat", "聊天", "Chat"),
@@ -880,7 +876,10 @@ export function MafwShell() {
         id: "memory", label: "记忆", hint: "Memory", group: "导航",
         run: () => openMemoryFocus(),
       },
-      nav("approvals", "审批", "Approvals"),
+      {
+        id: "approvals", label: "审批", hint: "Approvals", group: "导航",
+        run: () => openPageFocus("approvals"),
+      },
       {
         id: "triage", label: "分诊", hint: "Triage", group: "导航",
         run: () => openPageFocus("triage"),
@@ -895,7 +894,7 @@ export function MafwShell() {
       },
       {
         id: "new-session", label: "新建会话", hint: "New session", group: "会话",
-        run: () => { setShowConfig(false); void createSession().then(sid => { if (sid) openSessionTab(sid) }) },
+        run: () => { void createSession().then(sid => { if (sid) openSessionTab(sid) }) },
       },
       {
         id: "new-window", label: "新建窗口", hint: "New window", group: "会话",
@@ -911,11 +910,11 @@ export function MafwShell() {
       },
       {
         id: "open-settings", label: "打开设置", hint: "Settings", group: "导航",
-        run: () => setShowConfig(true),
+        run: () => openConfigPage(),
       },
       {
         id: "open-usage", label: "打开用量与上下文", hint: "Usage & Context", group: "导航",
-        run: () => { setShowConfig(true); setConfigSection("usage") },
+        run: () => openConfigPage("usage"),
       },
       {
         id: "toggle-rightdock", label: "切换右侧面板", hint: "RightDock (Ctrl+T)", group: "导航",
@@ -976,12 +975,10 @@ export function MafwShell() {
         const link = parseDeepLink(u)
         if (!link) continue
         if (link.kind === "session") {
-          setShowConfig(false)
           setActiveTab("chat")
           setShowWelcome(false)
           openSessionTab(link.id)
         } else if (link.kind === "tab") {
-          setShowConfig(false)
           setShowWelcome(false)
           setActiveTab(link.id as any)
         }
@@ -994,7 +991,6 @@ export function MafwShell() {
   // pings us — jump to the chat tab and focus the composer.
   onMount(() => {
     const off = (window.api as any).onQuickEntry?.(() => {
-      setShowConfig(false)
       setShowWelcome(false)
       setActiveTab("chat")
       queueMicrotask(() => {
@@ -1437,23 +1433,17 @@ export function MafwShell() {
     onCleanup(() => configureGoalCreatedActions(null))
   })
 
-  // Listen for UsageDock "go to Config > Usage" link. ConfigPage also listens
-  // for this event to switch sections while already mounted; MafwShell only
-  // opens the page and records the initial section for the closed→open flow.
+  // Listen for UsageDock "go to Config > Usage" link and any other
+  // `mafw:open-config` emitter. ConfigPage switches sections itself when it is
+  // already mounted; `configSection` covers the closed→open flow.
   onMount(() => {
     const handler = (e: Event) => {
       const section = (e as CustomEvent).detail
       setConfigSection(isNavKey(section) ? section : undefined)
-      setShowConfig(true)
+      openPageFocus("config")
     }
     window.addEventListener('mafw:open-config', handler)
     onCleanup(() => window.removeEventListener('mafw:open-config', handler))
-  })
-
-  // Reset configSection when config page closes to prevent stale section leaking
-  // to other entry points (Rail settings / nav, etc.).
-  createEffect(() => {
-    if (!showConfig()) setConfigSection(undefined)
   })
 
   // Theme: 逻辑在 ./theme.ts（与 preload 同源的 mafw-theme 键契约见其文件头注释）。
@@ -1929,7 +1919,6 @@ export function MafwShell() {
     console.log("[mafw] createSession")
     const enterChat = () => {
       setShowWelcome(false)
-      setShowConfig(false)
       setActiveTab("chat")
     }
     // Persisted-only callers (Creator entry) must leave the current view alone
@@ -2329,9 +2318,9 @@ export function MafwShell() {
       diffSupported: experienceStore.supported("branch.diff"),
     })
   })
-  const welcomeFull = () => activeTab() === "chat" && !showConfig() && (showWelcome() || !activeSessionId())
-  const chatActive = () => activeTab() === "chat" && !showConfig() && !welcomeFull()
-  const workbenchContent = (): WorkbenchContentMode => (showConfig() ? "config" : "project")
+  const welcomeFull = () => activeTab() === "chat" && (showWelcome() || !activeSessionId())
+  const chatActive = () => activeTab() === "chat" && !welcomeFull()
+  const workbenchContent = (): WorkbenchContentMode => "project"
   const narrowChat = () => narrowZone() && narrowView() === "chat"
   const chatSplit = () => workbenchSplit({ content: workbenchContent(), open: rightDockOpen() })
   const focusActive = () => workbenchFocusActive({ focus: workbenchFocus(), content: workbenchContent(), open: rightDockOpen() })
@@ -2641,7 +2630,7 @@ export function MafwShell() {
     openSession: (sid: string) => openSessionTab(sid),
     openGoal: (goalId: string, focus: GoalDetailFocus) => openGoalAndDiscuss(goalId, focus),
     openWork: () => openProjectWork(),
-    openConfig: () => { setConfigSection(undefined); setShowConfig(true) },
+    openConfig: () => openConfigPage(),
   }
   onMount(() => {
     const off = window.api.browser.onOpenUrl((req) => {
@@ -2785,7 +2774,6 @@ export function MafwShell() {
   })
   const revealWorkbench = () => {
     closeLeftDockIfOverlay()
-    setShowConfig(false)
     setActiveTab("chat")
     applyRightDock(true)
     if (narrowZone()) setNarrowView("workbench")
@@ -2817,6 +2805,15 @@ export function MafwShell() {
     setFocusState((state) =>
       selectFocus(seedWorldRoot(state, worldScope), worldScope, { kind: "page", id }),
     )
+  }
+  /**
+   * 打开设置页并切到指定 section。ConfigPage 已挂载时靠 `mafw:open-config`
+   * 事件切 section；未挂载时靠 initialSection 走 props。
+   */
+  const openConfigPage = (section?: NavKey) => {
+    setConfigSection(section)
+    openPageFocus("config")
+    requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("mafw:open-config", { detail: section })))
   }
   const openBrowserFocus = (url: string, opts?: { newTab?: boolean }) => {
     revealWorkbench()
@@ -3855,7 +3852,6 @@ export function MafwShell() {
   }>({ tab: "team", seq: 0 })
   const openPodPanelTab = (tab: "team" | "memory", target?: "members" | "inbox") => {
     closeLeftDockIfOverlay()
-    setShowConfig(false)
     setActiveTab("chat")
     setShowWelcome(false)
     applyRightDock(true)
@@ -4491,7 +4487,6 @@ export function MafwShell() {
     const sid = reusable ?? (await createSession({ noReveal: true, requirePersisted: true }))
     if (!sid) return // persisted creation failed (toast already shown)
     applyAgentSwitch(agent, sid)
-    setShowConfig(false)
     openSessionTab(sid)
   }
 
@@ -4607,7 +4602,7 @@ export function MafwShell() {
           onApprovals={() => openPageFocus("approvals")}
           onMcp={() => openPageFocus("mcp")}
           onNotifications={() => { closeLeftDockIfOverlay(); setNotificationsOpen((open) => !open) }}
-          onConfig={() => { closeLeftDockIfOverlay(); setConfigSection(undefined); setShowConfig(true) }}
+          onConfig={() => openConfigPage()}
           onNewSession={() => { closeLeftDockIfOverlay(); void createSession().then((sid: any) => { if (sid) openSessionTab(sid) }) }}
           onNewWorktreeSession={() => createWorktreeSession()}
           worktreeEnabled={worktreeEnabled()}
@@ -4623,9 +4618,9 @@ export function MafwShell() {
           onPluginItem={openPluginSurface}
           connPhase={connPhaseLabel()}
           gatewayState={gwStatus()?.state ?? null}
-          approvalsActive={activeTab() === "approvals" && !showConfig()}
-          mcpActive={activeTab() === "mcp" && !showConfig()}
-          configActive={showConfig()}
+          approvalsActive={activePageId() === "approvals"}
+          mcpActive={activePageId() === "mcp"}
+          configActive={activePageId() === "config"}
         />
       </div>
       {/* 顶行：strip（会话 tab 恒显）+ dock 图标组 + 窗口控制 */}
@@ -4641,7 +4636,7 @@ export function MafwShell() {
           sessions={sessions}
           titleOf={(id, fallback) => titleOfSession(id, fallback)}
           activeViewId={activeViewId}
-          onSelect={(id) => { closeLeftDockIfOverlay(); setShowConfig(false); setActiveTab("chat"); setShowWelcome(false); setActiveSessionId(id); setActiveViewId(id) }}
+          onSelect={(id) => { closeLeftDockIfOverlay(); setActiveTab("chat"); setShowWelcome(false); setActiveSessionId(id); setActiveViewId(id) }}
           onClose={closeSession}
           onRename={(id, next) => {
             void window.api.mafw.sessions.rename(id, next)
@@ -4662,13 +4657,12 @@ export function MafwShell() {
           onFork={(id) => void forkSessionFromMenu(id)}
           onHome={() => {
             closeLeftDockIfOverlay()
-            setShowConfig(false)
             setActiveTab("chat")
             setShowWelcome(true)
           }}
         />
         <div class="mafw-topstrip-spacer" />
-        <Show when={narrowZone() && !showConfig()}>
+        <Show when={narrowZone()}>
           <div class="mafw-narrow-switch" role="group" aria-label="Chat / Workbench">
             <ButtonV2
               variant="ghost"
@@ -4690,20 +4684,18 @@ export function MafwShell() {
             </ButtonV2>
           </div>
         </Show>
-        <Show when={!showConfig()}>
-          <TooltipV2 value={`${rightDockOpen() ? "隐藏" : "显示"}面板 (Ctrl+Alt+B)`} openDelay={300}>
-            <ButtonV2
-              variant="ghost"
-              size="small"
-              class="mafw-layout-toggle"
-              aria-label="切换面板"
-              aria-pressed={rightDockOpen()}
-              onClick={() => applyRightDock(!rightDockOpen())}
-            >
-              <Icon name={rightDockOpen() ? "layout-right-full" : "layout-right-partial"} size="small" />
-            </ButtonV2>
-          </TooltipV2>
-        </Show>
+        <TooltipV2 value={`${rightDockOpen() ? "隐藏" : "显示"}面板 (Ctrl+Alt+B)`} openDelay={300}>
+          <ButtonV2
+            variant="ghost"
+            size="small"
+            class="mafw-layout-toggle"
+            aria-label="切换面板"
+            aria-pressed={rightDockOpen()}
+            onClick={() => applyRightDock(!rightDockOpen())}
+          >
+            <Icon name={rightDockOpen() ? "layout-right-full" : "layout-right-partial"} size="small" />
+          </ButtonV2>
+        </TooltipV2>
         <WindowControls />
       </div>
       {/* 右列下行：left dock(push 列) | main | dock */}
@@ -4763,9 +4755,7 @@ export function MafwShell() {
         <div class="mafw-main" classList={{ "mafw-narrow-chat": narrowChat() }}>
           <div class="mafw-content" classList={{ "mafw-chat-content": activeTab() === "chat" }}>
             <Show when={connDown()}><ConnBanner /></Show>
-            {showConfig() ? (
-              <ConfigPage onBack={() => { setShowConfig(false); setConfigSection(undefined) }} initialSection={configSection()} theme={theme() ?? undefined} onToggleTheme={toggleTheme} projectDir={benchRoot() ?? undefined} sessionID={currentSessionID() || undefined} onCreatePlugin={() => void openCreatorSession()} creatorEntry={creatorEntry()} />
-            ) : connDown() && activeTab() !== "chat" ? (
+            {connDown() && activeTab() !== "chat" ? (
               <div class="mafw-rail-empty" style={{ padding: "48px 0" }}>Gateway 已断开——数据将在恢复后自动刷新</div>
             ) : activeTab() === "chat" ? (
               <div class="mafw-chat">
@@ -4808,11 +4798,11 @@ export function MafwShell() {
                           parentID={store.session.find((s: any) => s.id === activeSessionId()!)?.parentID ?? null}
                           onBackToParent={() => backToParent(activeSessionId()!)}
                           onOpenSubagent={(id) => void openSubagentSession(id)}
-                          onOpenUsage={() => { setShowConfig(true); setConfigSection("usage") }}
+                          onOpenUsage={() => openConfigPage("usage")}
                           currentProject={currentProject() ?? undefined}
-                          onNavigateTab={(t) => { setActiveTab(t as any); setShowConfig(false) }}
+                          onNavigateTab={(t) => { setActiveTab(t as any) }}
                           onToggleTheme={toggleTheme}
-                          onOpenSettings={() => { setConfigSection(undefined); setShowConfig(true) }}
+                          onOpenSettings={() => openConfigPage()}
                           onModelSelect={onModelSelect}
                           onApplyAgentSwitch={applyAgentSwitch}
                           onPermReply={permReply}
@@ -4823,7 +4813,7 @@ export function MafwShell() {
                           onTaskToggle={(el, sid) => toggleTasks(el, sid ?? null)}
                           onTaskHoverOpen={(el, sid) => openTasksHover(el, sid ?? null)}
                           onTaskHoverLeave={scheduleTaskClose}
-                          onFocus={() => { setShowConfig(false); setActiveTab("chat") }}
+                          onFocus={() => { setActiveTab("chat") }}
                           onOpenForkedSession={(forkedSid) => openSessionTab(forkedSid)}
                           onRecordPodNote={recordPodNote}
                           onHandoffToLead={() => void handoffActiveSessionToLead()}
@@ -4895,7 +4885,7 @@ export function MafwShell() {
                      historySessions={historySessions()}
                      onSelect={(sid) => { const h = historySessions().find(x => x.id === sid); openSessionTab(sid, h?.title) }}
                      onCreate={() => void createSession()}
-                     onNavigate={(t) => { setActiveTab(t); setShowConfig(false); closeLeftDockIfOverlay() }}
+                     onNavigate={(t) => { setActiveTab(t); closeLeftDockIfOverlay() }}
                      onOpenLead={openLeadEntry}
                      onOpenWork={openProjectWork}
                      onOpenGoalComposer={openNewGoalComposer}
@@ -4968,7 +4958,7 @@ export function MafwShell() {
         <div class="mafw-dock-slot">
           <Show when={dockPresent()}>
             <Show when={connDown()}><ConnBanner /></Show>
-            {connDown() ? (
+            {connDown() && !activePageId() ? (
               <div class="mafw-rail-empty" style={{ padding: "48px 0" }}>Gateway 已断开——数据将在恢复后自动刷新</div>
             ) : (
               <div class="mafw-dock-shell" classList={{ "is-hidden": workbenchShellHidden({ content: workbenchContent(), open: rightDockOpen() }) }}>
@@ -5044,8 +5034,10 @@ export function MafwShell() {
                         return <AutomationsPage compact />
                       case "mcp":
                         return <McpPage compact />
+                      case "config":
+                        return <ConfigPage compact initialSection={configSection()} theme={theme() ?? undefined} onToggleTheme={toggleTheme} projectDir={benchRoot() ?? undefined} sessionID={currentSessionID() || undefined} onCreatePlugin={() => void openCreatorSession()} creatorEntry={creatorEntry()} />
                       default:
-                        return <DockEmpty icon={WORKBENCH_PAGE_META[id].icon} text={`${WORKBENCH_PAGE_META[id].label}页待接入`} />
+                        return <DockEmpty icon="layout-grid" text="页面待接入" />
                     }
                   }}
                   renderWorld={() => (
