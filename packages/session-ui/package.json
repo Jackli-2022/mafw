@@ -10,6 +10,8 @@
     "./parts-rules": "./src/components/parts-rules.ts",
     "./message-file": "./src/components/message-file.ts",
     "./message-part-text": "./src/components/message-part-text.ts",
+    "./tool-presentation": "./src/components/tool-presentation.ts",
+    "./tool-registry": "./src/components/tool-registry.ts",
     "./markdown-stream": "./src/components/markdown-stream.ts",
     "./markdown-cache": "./src/components/markdown-cache.tsx",
     "./line-comment-styles": "./src/components/line-comment-styles.ts",

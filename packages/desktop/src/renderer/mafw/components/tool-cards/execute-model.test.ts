@@ -1,13 +1,18 @@
+import * as fs from "node:fs"
 import { describe, expect, test } from "bun:test"
 import { TOOL_SPECS } from "./extract"
 import {
   executeCallArgs,
   executeCalls,
+  executeCollapsed,
   executeHeaderSubtitle,
   executeOutputView,
   executeToolLabel,
   normalizeExecuteToolName,
 } from "./execute-model"
+
+const executeSource = fs.readFileSync(new URL("./execute.tsx", import.meta.url), "utf-8")
+const indexSource = fs.readFileSync(new URL("./index.ts", import.meta.url), "utf-8")
 
 describe("executeCalls", () => {
   test("keeps valid metadata.toolCalls and drops malformed entries", () => {
@@ -109,6 +114,39 @@ describe("executeHeaderSubtitle", () => {
 
   test("returns undefined with no calls", () => {
     expect(executeHeaderSubtitle([])).toBeUndefined()
+  })
+})
+
+describe("executeCollapsed", () => {
+  test("summarizes calls and failures without inventing child output", () => {
+    const props = {
+      tool: "execute",
+      input: {},
+      metadata: {
+        toolCalls: [
+          { tool: "mafw.mafw_get_axioms", status: "completed", input: { query: "a" } },
+          { tool: "search", status: "error" },
+        ],
+      },
+      status: "error",
+      output: "",
+    } as any
+    const out = executeCollapsed(props)
+    expect(out.title).toBe("Code Mode 执行")
+    expect(out.object).toBe("search")
+    expect(out.meta).toContainEqual({ text: "2 次调用" })
+    expect(out.meta).toContainEqual({ text: "有失败", tone: "err" })
+    expect(out.status).toBe("error")
+    for (const call of executeCalls(props.metadata)) expect("output" in call).toBe(false)
+  })
+})
+
+describe("execute card wiring", () => {
+  test("registers a presenter and a body-only renderer", () => {
+    expect(executeSource).toContain("presentExecute")
+    expect(executeSource).toContain("ExecuteBody")
+    expect(indexSource).toContain("present: presentExecute")
+    expect(indexSource).toContain("renderBody: ExecuteBody")
   })
 })
 

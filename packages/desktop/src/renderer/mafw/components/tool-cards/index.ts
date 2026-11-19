@@ -6,7 +6,7 @@ import { MafwAddMemoryCard } from "./memory-write"
 import { MafwDeltasCard } from "./interact"
 import { MafwRuleCard } from "./automation"
 import { MafwPythonCard, MafwPythonRestartCard } from "./python"
-import { MafwExecuteCard } from "./execute"
+import { MafwExecuteCard, ExecuteBody, presentExecute } from "./execute"
 import { MafwGoalCreatedCard } from "./goal-created"
 import { REGISTERED_TOOLS, RULE_TOOLS, aliasKeys } from "./registered-tools"
 
@@ -23,7 +23,12 @@ export function registerMafwToolCards() {
   for (const [name, spec] of Object.entries(TOOL_SPECS)) {
     registerAliased(name, familyCard(spec))
   }
-  ToolRegistry.register({ name: "execute", render: MafwExecuteCard })
+  ToolRegistry.register({
+    name: "execute",
+    present: presentExecute,
+    renderBody: ExecuteBody,
+    render: MafwExecuteCard,
+  })
   registerAliased("mafw_search_hybrid", MafwSearchCard)
   registerAliased("mafw_add_memory", MafwAddMemoryCard)
   registerAliased("mafw_get_deltas", MafwDeltasCard)

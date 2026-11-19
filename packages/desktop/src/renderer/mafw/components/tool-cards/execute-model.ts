@@ -1,4 +1,6 @@
 import { TOOL_SPECS, trunc } from "./extract"
+import type { ToolProps } from "@mafw/session-ui/message-part"
+import { statusOf, type ToolCollapsedPresentation } from "@mafw/session-ui/tool-presentation"
 
 export type ExecuteCallStatus = "running" | "completed" | "error"
 
@@ -72,6 +74,24 @@ export function executeHeaderSubtitle(calls: readonly ExecuteCall[]): string | u
   const args = executeCallArgs(call.input)
   const label = executeToolLabel(call.tool)
   return args.length ? `${label} [${args.join(", ")}]` : label
+}
+
+/** Collapsed row for the ToolPresentation contract. No per-call output exists. */
+export function executeCollapsed(props: ToolProps): ToolCollapsedPresentation {
+  const calls = executeCalls(props.metadata)
+  const failed =
+    props.status === "error" ||
+    props.metadata?.error === true ||
+    calls.some((call) => call.status === "error")
+  return {
+    title: "Code Mode 执行",
+    object: executeHeaderSubtitle(calls),
+    meta: [
+      ...(calls.length ? [{ text: `${calls.length} 次调用` }] : []),
+      ...(failed ? [{ text: "有失败", tone: "err" as const }] : []),
+    ],
+    status: statusOf(props),
+  }
 }
 
 export interface ExecuteOutputView {

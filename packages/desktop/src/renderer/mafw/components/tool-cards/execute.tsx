@@ -1,6 +1,7 @@
 import { createMemo, createSignal, For, Show } from "solid-js"
 import { BasicTool } from "@mafw/session-ui/basic-tool"
 import type { ToolProps } from "@mafw/session-ui/message-part"
+import type { ToolPresentation, ToolPresentationContext } from "@mafw/session-ui/tool-presentation"
 import { Icon } from "@mafw/ui/icon"
 import { TextShimmer } from "@mafw/ui/text-shimmer"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
@@ -9,6 +10,7 @@ import { ToolSections } from "./shared"
 import {
   executeCallArgs,
   executeCalls,
+  executeCollapsed,
   executeHeaderSubtitle,
   executeOutputView,
   executeToolIcon,
@@ -69,8 +71,7 @@ function ExecuteCallRow(props: { call: ExecuteCall }) {
   )
 }
 
-/** Code Mode execute: child calls stream through metadata.toolCalls. */
-export function MafwExecuteCard(props: ToolProps) {
+function useExecuteModel(props: ToolProps) {
   const calls = createMemo(() => executeCalls(props.metadata))
   const subtitle = createMemo(() => executeHeaderSubtitle(calls()))
   const pending = () => props.status === "pending" || props.status === "running"
@@ -85,6 +86,59 @@ export function MafwExecuteCard(props: ToolProps) {
     if (output().truncated && showAll()) return rawSection(props.output)
     return genericSections(output().truncated ? output().preview : props.output)
   })
+  return { calls, subtitle, pending, failed, showAll, setShowAll, output, sections }
+}
+
+/** Body-only renderer used by ToolCard via renderBody. No per-call output. */
+export function ExecuteBody(props: ToolProps) {
+  const { calls, pending, failed, showAll, setShowAll, output, sections } = useExecuteModel(props)
+
+  return (
+    <div class="mafw-tool-box mafw-execute-box">
+      <Show
+        when={calls().length > 0}
+        fallback={
+          <div class="mafw-execute-empty">
+            {pending() ? "等待脚本调用工具…" : "脚本未调用工具"}
+          </div>
+        }
+      >
+        <div class="mafw-execute-calls">
+          <For each={calls()}>{(call) => <ExecuteCallRow call={call} />}</For>
+        </div>
+      </Show>
+      <Show when={!pending() && failed() && sections().length === 0}>
+        <div class="mafw-tool-meta" style="color:#e8636b">执行失败</div>
+      </Show>
+      <Show when={!pending() && output().truncated}>
+        <div class="mafw-execute-more">
+          <span>输出已截断（{output().chars} 字符 / {output().lines} 行）</span>
+          <ButtonV2 variant="ghost" size="small" onClick={() => setShowAll((value) => !value)}>
+            {showAll() ? "收起" : "展开全部"}
+          </ButtonV2>
+        </div>
+      </Show>
+      <Show when={sections().length > 0}>
+        <div class="mafw-execute-output">
+          <div class="mafw-execute-output-label">{showAll() && output().truncated ? "输出（全文）" : "输出"}</div>
+          <ToolSections sections={sections()} />
+        </div>
+      </Show>
+    </div>
+  )
+}
+
+/** Collapsed summary + the existing rich body. */
+export function presentExecute(ctx: ToolPresentationContext): ToolPresentation {
+  return {
+    collapsed: executeCollapsed(ctx.props),
+    expanded: { body: "custom", defaultOpen: true },
+  }
+}
+
+/** Legacy full-card wrapper; the contract path uses presentExecute + ExecuteBody. */
+export function MafwExecuteCard(props: ToolProps) {
+  const { calls, subtitle, pending, failed } = useExecuteModel(props)
 
   return (
     <BasicTool
@@ -112,37 +166,7 @@ export function MafwExecuteCard(props: ToolProps) {
         </div>
       )}
     >
-      <div class="mafw-tool-box mafw-execute-box">
-        <Show
-          when={calls().length > 0}
-          fallback={
-            <div class="mafw-execute-empty">
-              {pending() ? "等待脚本调用工具…" : "脚本未调用工具"}
-            </div>
-          }
-        >
-          <div class="mafw-execute-calls">
-            <For each={calls()}>{(call) => <ExecuteCallRow call={call} />}</For>
-          </div>
-        </Show>
-        <Show when={!pending() && failed() && sections().length === 0}>
-          <div class="mafw-tool-meta" style="color:#e8636b">执行失败</div>
-        </Show>
-        <Show when={!pending() && output().truncated}>
-          <div class="mafw-execute-more">
-            <span>输出已截断（{output().chars} 字符 / {output().lines} 行）</span>
-            <ButtonV2 variant="ghost" size="small" onClick={() => setShowAll((value) => !value)}>
-              {showAll() ? "收起" : "展开全部"}
-            </ButtonV2>
-          </div>
-        </Show>
-        <Show when={sections().length > 0}>
-          <div class="mafw-execute-output">
-            <div class="mafw-execute-output-label">{showAll() && output().truncated ? "输出（全文）" : "输出"}</div>
-            <ToolSections sections={sections()} />
-          </div>
-        </Show>
-      </div>
+      <ExecuteBody {...props} />
     </BasicTool>
   )
 }
