@@ -94,9 +94,10 @@
 - 折叠门禁：Session UI **36 suites / 197 pass / 0 fail**；Desktop **797 suites / 4164 pass / 0 fail**；两侧 `tsgo` rc 0；`electron-vite build` 通过。
 - 提交：`638c97e8d`（契约）、`f931f2734`（registry）、`8747e565a`（ToolCard）、`495aa6664`（行工具）、`133f85bc7`（ToolPartDisplay）、`04532270a`（context 组）、`8d9d31689`（plugin override）、`e67a71f4a`（ChatView 11px）、`8f29e679e`（CodeMode 卡）。
 - Wave 2（diff 卡）：`edit/write/apply_patch` 接 `presentDiffTool` + `renderBody`；折叠行显示相对路径 / `N 个文件` 与 `+N -M`（0/0 不显示），展开体保留 `ToolFileAccordion` / `DiffChanges` / `DiagnosticsDisplay` 与 `virtualizeDiff`；不再包 `BasicTool`。diff body 文件名统一 11px/550、目录 10.5px，正文与折叠标题同边（6px，内层 button 不再叠加 padding）。
-- Wave 2 门禁：Session UI **41 suites / 211 pass / 0 fail**；Desktop **798 suites / 4169 pass / 0 fail**；两侧 `tsgo` rc 0；`electron-vite build` 通过。
-- Wave 2 真机：`Write` 卡折叠行 `state=collapsed`、标题 11px/550、object 10.5px、行高 28px、`+174`；展开后 diff 文件头 11px/550，首个内容元素（文件图标）与标题左边缘差 0.8px；页面无 `.mafw-turn-render-error`。
-- Wave 2 提交：`96a4a8e5e`（model+presenter）、`9fca8a63f`（bodies）、`c55f92a3b`（wiring）、`ab3d1229b`（density）、`ba1c5a479`（edge alignment）、`b9bc8e33d`（conformance + desktop wiring test）。
+- Wave 2 评审修复：`data-file-path` 留在始终渲染的 `tool-part-wrapper`（折叠行右键仍出文件菜单）；`ToolPresentationFallback` + `toolFallbackKind` 让插件代理在 presenter-only 卡上回落真实 `ToolCard` 而不是 GenericTool JSON；单文件 `apply_patch` 删除项不再默认展开；折叠行与 body 共用 `hasPatchContent` 过滤，计数一致；Windows 反斜杠路径恢复目录显示；body 内层 button 不再叠加 6px padding。
+- Wave 2 门禁：Session UI **42 suites / 216 pass / 0 fail**；Desktop **799 suites / 4172 pass / 0 fail**；两侧 `tsgo` rc 0；`electron-vite build` 通过。
+- Wave 2 真机：`Write` 卡折叠行 `state=collapsed`、标题 11px/550、object 10.5px、行高 28px、`+174`，`closest("[data-file-path]")` 命中 wrapper；展开后 diff 文件头 11px/550、目录 10.5px，首个内容元素（文件图标）与标题左边缘差 0.8px；页面无 `.mafw-turn-render-error`。
+- Wave 2 提交：`96a4a8e5e`（model+presenter）、`9fca8a63f`（bodies）、`c55f92a3b`（wiring）、`ab3d1229b`（density）、`ba1c5a479`（edge alignment）、`b9bc8e33d`（conformance + desktop wiring test）、`dba65abec`（collapsed row file path）、`61d1a6ec1`（renderable patch rows）、`07f324e39`（deleted seed + Windows dirs）、`12a79fe13`（plugin presenter fallback）。
 
 ## 已知问题 / 后续
 
