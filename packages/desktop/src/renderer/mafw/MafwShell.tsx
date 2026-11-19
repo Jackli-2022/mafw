@@ -208,7 +208,7 @@ import { fileProtocol } from "./file-protocol-client"
 import { requestBrowserNavigate } from "./browser-nav"
 import { buildMafwFileUrl } from "../../shared/mafw-file"
 import { CHAT_COMFORT_MIN, CHAT_PX_CEIL, CHAT_PX_FLOOR, WORKBENCH_DEFAULT_DETENT, WORKBENCH_MIN_WIDTH, chatPxForDetent, snapDetent, workbenchZoneFor, type WorkbenchDetent } from "./workbench-detents"
-import { migrateDockKeys, workbenchColumns, workbenchFocusActive, workbenchShellHidden, workbenchSplit, formatResizePreview, type WorkbenchContentMode } from "./workbench-layout"
+import { migrateDockKeys, workbenchColumns, workbenchFocusActive, workbenchShellHidden, workbenchSplit, formatResizePreview } from "./workbench-layout"
 import { resolveWorkbenchRoot } from "./workbench-root"
 import {
   contentScopeKey,
@@ -2316,14 +2316,13 @@ export function MafwShell() {
   })
   const welcomeFull = () => activeTab() === "chat" && (showWelcome() || !activeSessionId())
   const chatActive = () => activeTab() === "chat" && !welcomeFull()
-  const workbenchContent = (): WorkbenchContentMode => "project"
   // 主区只承载 chat：任何遗留的 setActiveTab(页面) 都立即回正；页面只进右工作台。
   createEffect(() => {
     if (activeTab() !== "chat") setActiveTab("chat")
   })
   const narrowChat = () => narrowZone() && narrowView() === "chat"
-  const chatSplit = () => workbenchSplit({ content: workbenchContent(), open: rightDockOpen() })
-  const focusActive = () => workbenchFocusActive({ focus: workbenchFocus(), content: workbenchContent(), open: rightDockOpen() })
+  const chatSplit = () => workbenchSplit({ open: rightDockOpen() })
+  const focusActive = () => workbenchFocusActive({ focus: workbenchFocus(), open: rightDockOpen() })
   const bodyColumns = () =>
     workbenchColumns({
       leftPx: leftDockMode() === "push" ? effectiveLeftDockWidth(leftDockWidth(), viewportWidth(), leftDockRequiredMainWidth()) : 0,
@@ -2761,7 +2760,7 @@ export function MafwShell() {
       : (worldIndex >= 0 ? worldIndex : 0)
     return frameView({
       worldName: railProjectName(currentProject(), true),
-      scopeLabel: subject.kind === "memory" ? "项目" : focusScopeLabel(focus.scope),
+      scopeLabel: subject.kind === "memory" || subject.kind === "page" ? "项目" : focusScopeLabel(focus.scope),
       subjectLabel,
       worldIndex,
       scopeStartIndex,
@@ -3662,11 +3661,15 @@ export function MafwShell() {
         icon: "goal",
       })
     }
-    if (isStalePageActiveTab(activeDocumentTabId(), state.stack.map((focus) => focus.subject))) {
-      clearActiveDocumentTab()
-    }
     syncStageToFocus(state)
     void validateFocusStack(worldId, state)
+  })
+  // document store 的 activeId 可能晚于 focus 栈恢复；用响应式门清掉
+  // “没有 page focus 支撑”的 page activeId，避免 tab 高亮与 stage 错位。
+  createEffect(() => {
+    if (isStalePageActiveTab(activeDocumentTabId(), focusState().stack.map((focus) => focus.subject))) {
+      clearActiveDocumentTab()
+    }
   })
   createEffect(() => {
     const worldId = currentProject()
@@ -4779,9 +4782,7 @@ export function MafwShell() {
         <div class="mafw-main" classList={{ "mafw-narrow-chat": narrowChat() }}>
           <div class="mafw-content" classList={{ "mafw-chat-content": activeTab() === "chat" }}>
             <Show when={connDown()}><ConnBanner /></Show>
-            {connDown() && activeTab() !== "chat" ? (
-              <div class="mafw-rail-empty" style={{ padding: "48px 0" }}>Gateway 已断开——数据将在恢复后自动刷新</div>
-            ) : activeTab() === "chat" ? (
+            {activeTab() === "chat" ? (
               <div class="mafw-chat">
                 {/* Single ChatPane for the active session */}
                 <Show
@@ -4977,7 +4978,7 @@ export function MafwShell() {
             {connDown() && !activePageId() ? (
               <div class="mafw-rail-empty" style={{ padding: "48px 0" }}>Gateway 已断开——数据将在恢复后自动刷新</div>
             ) : (
-              <div class="mafw-dock-shell" classList={{ "is-hidden": workbenchShellHidden({ content: workbenchContent(), open: rightDockOpen() }) }}>
+              <div class="mafw-dock-shell" classList={{ "is-hidden": workbenchShellHidden({ open: rightDockOpen() }) }}>
                 <WorkbenchShell
                   open={dockPresent()}
                   focusView={activeFocus()}

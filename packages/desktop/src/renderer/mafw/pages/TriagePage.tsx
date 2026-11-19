@@ -79,7 +79,7 @@ export function TriagePage(props: { compact?: boolean; onOpenGoals?: () => void 
           const proposeReject = () => void act("提议拒绝", () => window.api.mafw.triage.propose(t.id, "reject", "用户在桌面端提议拒绝"))
           return (
             <div class="mafw-card" tabIndex={0} onKeyDown={openMenuOnKey} onContextMenu={(event) => requestTriageMenu(t, event)}>
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, "min-width": 0 }}>
                 <div class="mafw-card-title">{card.title}</div>
                 <div class="mafw-card-meta">{card.meta}</div>
               </div>

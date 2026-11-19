@@ -26,20 +26,18 @@ export function detentFromLegacy(storedChatWidth: string | null, availableWidth:
   return migrateLegacyChatWidth(Number.isFinite(px) ? px : null, availableWidth)
 }
 
-/** 右工作台可见性：项目路由（chat/Welcome/全局页面）保持可用；Config 让位、手动关闭退位。 */
-export type WorkbenchContentMode = "project" | "config"
-
-export function workbenchSplit(input: { content: WorkbenchContentMode; open: boolean }): boolean {
-  return input.content === "project" && input.open
+/** 右工作台可见性：只由 dock 开关决定（主区恒为 chat，没有 config content mode）。 */
+export function workbenchSplit(input: { open: boolean }): boolean {
+  return input.open
 }
 
-/** Focus 只有在项目路由且右工作台打开时才允许收掉 chat 列；Config / 手动隐藏时不得产生 0px 主列。 */
-export function workbenchFocusActive(input: { focus: boolean; content: WorkbenchContentMode; open: boolean }): boolean {
-  return input.focus && input.content === "project" && input.open
+/** Focus 只有在右工作台打开时才允许收掉 chat 列；手动隐藏时不得产生 0px 主列。 */
+export function workbenchFocusActive(input: { focus: boolean; open: boolean }): boolean {
+  return input.focus && input.open
 }
 
-export function workbenchShellHidden(input: { content: WorkbenchContentMode; open: boolean }): boolean {
-  return input.content === "config" || !input.open
+export function workbenchShellHidden(input: { open: boolean }): boolean {
+  return !input.open
 }
 
 /** 拖动中的实时提示：px + 当前实际比例（比例是结果，不是定义）。 */

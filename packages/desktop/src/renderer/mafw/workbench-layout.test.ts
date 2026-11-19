@@ -61,23 +61,20 @@ describe("workbench layout pure functions", () => {
     assert.deepEqual(fresh, { detent: 760, terminalOpen: true })
   })
 
-  test("workbenchFocusActive：仅项目路由 + dock 打开时允许全宽", () => {
-    assert.equal(workbenchFocusActive({ focus: true, content: "project", open: true }), true)
-    assert.equal(workbenchFocusActive({ focus: true, content: "config", open: true }), false)
-    assert.equal(workbenchFocusActive({ focus: true, content: "project", open: false }), false)
-    assert.equal(workbenchFocusActive({ focus: false, content: "project", open: true }), false)
+  test("workbenchFocusActive：dock 打开时才允许全宽", () => {
+    assert.equal(workbenchFocusActive({ focus: true, open: true }), true)
+    assert.equal(workbenchFocusActive({ focus: true, open: false }), false)
+    assert.equal(workbenchFocusActive({ focus: false, open: true }), false)
   })
 
-  test("workbenchSplit：项目路由保持三列，Config / 手动关闭退位", () => {
-    assert.equal(workbenchSplit({ content: "project", open: true }), true)
-    assert.equal(workbenchSplit({ content: "project", open: false }), false)
-    assert.equal(workbenchSplit({ content: "config", open: true }), false)
+  test("workbenchSplit：dock 开关就是唯一门控", () => {
+    assert.equal(workbenchSplit({ open: true }), true)
+    assert.equal(workbenchSplit({ open: false }), false)
   })
 
-  test("workbenchShellHidden：只隐藏 Config 与手动关闭；项目页面保持可见", () => {
-    assert.equal(workbenchShellHidden({ content: "project", open: true }), false)
-    assert.equal(workbenchShellHidden({ content: "project", open: false }), true)
-    assert.equal(workbenchShellHidden({ content: "config", open: true }), true)
+  test("workbenchShellHidden：只由手动关闭决定", () => {
+    assert.equal(workbenchShellHidden({ open: true }), false)
+    assert.equal(workbenchShellHidden({ open: false }), true)
   })
 
   test("formatResizePreview：拖动实时 px + 实际比例", () => {

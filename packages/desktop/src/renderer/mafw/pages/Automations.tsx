@@ -153,7 +153,7 @@ export function AutomationsPage(props: { compact?: boolean } = {}) {
       ) : (
         rules().map((rule, idx) =>
           <div class="mafw-card" tabIndex={0} onKeyDown={openMenuOnKey} onContextMenu={(event) => requestRuleMenu(rule, event)}>
-            <div style={{ flex: 1 }}>
+            <div style={{ flex: 1, "min-width": 0 }}>
               <div class="mafw-card-title">{rule.name || rule.id}</div>
               {rule.trigger?.schedule && (
                 <div class="mafw-card-meta">Schedule: {rule.trigger.schedule}{rule.trigger.timezone ? ` (${rule.trigger.timezone})` : ""}</div>

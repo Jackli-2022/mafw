@@ -119,7 +119,7 @@ export function ApprovalsPage(props: {
           {pendingQuestions().map(a => {
             return (
             <div class="mafw-card" tabIndex={0} onKeyDown={openMenuOnKey} onContextMenu={(event) => requestQuestionMenu(a, event)}>
-                <div style={{ flex: 1 }}>
+                <div style={{ flex: 1, "min-width": 0 }}>
                   <div class="mafw-card-title">{a.question || a.id}</div>
                   <div class="mafw-card-meta">Goal: {a.goalId} · {a.status} · {a.createdAt ? new Date(a.createdAt).toLocaleString() : ""}</div>
                 </div>
@@ -134,7 +134,7 @@ export function ApprovalsPage(props: {
           <div class="mafw-approvals-group-title">已回答 · {answeredQuestions().length}</div>
           {answeredQuestions().map(a => (
             <div class="mafw-card">
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, "min-width": 0 }}>
                 <div class="mafw-card-title">{a.question || a.id}</div>
                 <div class="mafw-card-meta">Goal: {a.goalId} · {a.status} · {a.createdAt ? new Date(a.createdAt).toLocaleString() : ""}</div>
               </div>

@@ -102,7 +102,7 @@ function defaultIcon(subject: SceneSubject): DocumentTabIcon {
     case "memory":
       return "memory"
     case "page":
-      return WORKBENCH_PAGE_META[subject.id].icon as DocumentTabIcon
+      return WORKBENCH_PAGE_META[subject.id].icon
   }
 }
 

@@ -12,7 +12,7 @@ test("MafwShell opens pages through the generic page focus", () => {
   assert.match(shell, /const activePageId = \(\): WorkbenchPageId \| null =>/)
   assert.match(shell, /renderPage=\{\(id\) =>/)
   assert.match(shell, /subject\.kind === "page" \? WORKBENCH_PAGE_META\[subject\.id\]\.label/)
-  assert.match(shell, /isStalePageActiveTab\(activeDocumentTabId\(\), state\.stack\.map/)
+  assert.match(shell, /isStalePageActiveTab\(activeDocumentTabId\(\), focusState\(\)\.stack\.map/)
 })
 
 test("scene helpers understand page subjects without using kind as the icon", () => {

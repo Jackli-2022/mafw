@@ -11,7 +11,7 @@ test("main area is chat-only and guards the tab signal", () => {
     assert.doesNotMatch(shell, new RegExp(`activeTab\\(\\) === "${tab}"`))
   }
   assert.match(shell, /if \(activeTab\(\) !== "chat"\) setActiveTab\("chat"\)/)
-  assert.match(shell, /const workbenchContent = \(\): WorkbenchContentMode => "project"/)
+  assert.doesNotMatch(shell, /workbenchContent/)
 })
 
 test("navigateWorkbench routes chat, work, memory, config and pages", () => {
@@ -22,6 +22,8 @@ test("navigateWorkbench routes chat, work, memory, config and pages", () => {
   assert.match(shell, /if \(tab === "memory"\) \{ openMemoryFocus\(\); return \}/)
   assert.match(shell, /if \(tab === "config"\) \{ openConfigPage\(\); return \}/)
   assert.match(shell, /WORKBENCH_PAGE_IDS\.includes\(tab as WorkbenchPageId\)/)
+  // Unknown tabs fall through to chat instead of blanking the main area.
+  assert.match(shell, /setActiveTab\("chat"\)\s*\n\s*\}/)
   assert.match(shell, /onNavigateTab=\{\(t\) => navigateWorkbench\(t\)\}/)
   assert.match(shell, /onNavigate=\{\(t\) => \{ navigateWorkbench\(t\); closeLeftDockIfOverlay\(\) \}\}/)
 })
@@ -43,6 +45,8 @@ test("the dock toggle and workbench stay reachable without a config content mode
   const shell = read("MafwShell.tsx")
   assert.match(shell, /connDown\(\) && !activePageId\(\)/)
   assert.doesNotMatch(shell, /!showConfig\(\)/)
+  assert.doesNotMatch(shell, /workbenchContent|WorkbenchContentMode/)
+  assert.doesNotMatch(shell, /connDown\(\) && activeTab\(\) !== "chat"/)
 })
 
 test("closing tabs prunes their focus so back cannot resurrect a closed page", () => {
@@ -53,4 +57,6 @@ test("closing tabs prunes their focus so back cannot resurrect a closed page", (
   // A scene subject only maps to a tab that actually exists; the fallback
   // ensureSceneTabFor must be reachable for restored/trimmed tabs.
   assert.match(shell, /return documentTabs\(\)\.some\(\(entry\) => entry\.id === id\) \? id : null/)
+  // document store activeId can land after focus restore: the stale guard must be reactive.
+  assert.match(shell, /createEffect\(\(\) => \{\s*if \(isStalePageActiveTab\(activeDocumentTabId\(\), focusState\(\)\.stack\.map/)
 })

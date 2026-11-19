@@ -249,8 +249,10 @@ export function activateDocumentTab(id: string): void {
 export function clearActiveDocumentTab(id?: string): void {
   if (activeId() === null) return
   if (id !== undefined && activeId() !== id) return
+  const cleared = activeId()
   setActiveId(null)
-  desiredActiveId = null
+  // 只取消被清除的这一项；另一个待激活目标（例如焦点恢复）继续生效。
+  if (desiredActiveId === cleared) desiredActiveId = null
   persistOrder()
 }
 

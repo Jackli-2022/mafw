@@ -20,8 +20,8 @@ export function parseDeepLink(url: string): DeepLink | null {
   const id = rest.slice(slash + 1)
   if (!id) return null
   if (kind === "session") return { kind: "session", id }
-  // 2026-11-04：旧 workspace / goals deep link 统一落到 legacy `goals` 内部路由；
-  // MafwShell 的 redirect effect 再打开右工作台「工作」。
+  // 2026-11-04：旧 workspace / goals deep link 统一落到 `goals`；
+  // MafwShell 的 navigateWorkbench 再打开右工作台「工作」。
   if (kind === "tab" && id === "workspace") return { kind: "tab", id: "goals" }
   if (kind === "tab" && KNOWN_TABS.has(id)) return { kind: "tab", id }
   return null

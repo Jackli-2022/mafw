@@ -125,7 +125,21 @@ test("clearActiveDocumentTab drops only the matching active page tab", () => {
   assert.equal(activeDocumentTabId(), null)
 })
 
-test("re-syncing identical tabs does not rewrite the strip", () => {  syncFileTabs("C:/repo", [view("a.ts")])
+test("clearActiveDocumentTab keeps a different pending activation", () => {
+  syncFileTabs("C:/repo", [view("a.ts")])
+  const fileId = documentTabs()[0]!.id
+  activateDocumentTab(fileId)
+
+  requestDocumentActivation("web:w1")
+  clearActiveDocumentTab(fileId)
+  assert.equal(activeDocumentTabId(), null)
+
+  web("w1", "W")
+  assert.equal(activeDocumentTabId(), "web:w1")
+})
+
+test("re-syncing identical tabs does not rewrite the strip", () => {
+  syncFileTabs("C:/repo", [view("a.ts")])
   web("w1", "W")
   const first = documentTabs()
 

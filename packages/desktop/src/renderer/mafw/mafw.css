@@ -9090,7 +9090,6 @@ html[data-theme="light"] body {
 .mafw-approvals-actions {
   display: flex;
   gap: 4px;
-  flex-shrink: 0;
   flex-wrap: wrap;
 }
 .mafw-automations-header {

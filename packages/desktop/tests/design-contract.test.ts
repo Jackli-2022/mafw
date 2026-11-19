@@ -909,8 +909,8 @@ describe("layout-toggles — 顶行右端面板开关（左端由 IconRail 接�
   test("右工作台不再依赖 chat 路由；项目页面保持可见", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")
     expect(shell).not.toMatch(/chatActive\(\) && rightDockOpen\(\)/)
-    expect(shell).toMatch(/workbenchSplit\(\{ content: workbenchContent\(\), open: rightDockOpen\(\) \}\)/)
-    expect(shell).toMatch(/workbenchShellHidden\(\{ content: workbenchContent\(\), open: rightDockOpen\(\) \}\)/)
+    expect(shell).toMatch(/workbenchSplit\(\{ open: rightDockOpen\(\) \}\)/)
+    expect(shell).toMatch(/workbenchShellHidden\(\{ open: rightDockOpen\(\) \}\)/)
     expect(shell).not.toMatch(/showConfig/)
   })
   test("Focus 全宽：detent 快照恢复 + 不持久化", () => {
