@@ -75,6 +75,8 @@ export interface SnapshotNeighborMemory {
   date?: string;
   energy?: number;
   neighborOf: string;
+  /** Metadata-only query-time support check (anchors + neighbours). */
+  cue_anchors?: string[];
 }
 
 export interface RenderedSnapshotBlock {
@@ -266,6 +268,9 @@ export async function buildSnapshot(
         abstraction: memory.primary_abstraction,
         ...(memory.created_at ? { date: memory.created_at } : {}),
         ...(typeof memory.energy === 'number' && Number.isFinite(memory.energy) ? { energy: memory.energy } : {}),
+        ...(Array.isArray(memory.cue_anchors) && memory.cue_anchors.length > 0
+          ? { cue_anchors: [...memory.cue_anchors] }
+          : {}),
       })),
       ...(neighbors ?? []),
     ],

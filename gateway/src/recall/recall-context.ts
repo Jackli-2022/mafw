@@ -288,6 +288,10 @@ export function recallNeighbors(
         score: nb.score,
         type: e.type,
         created_at: e.created_at,
+        // Metadata-only support check on the snapshot serve path: a neighbour
+        // must be relevant to the CURRENT query on its own (see
+        // recall/snapshot-current-query.ts).
+        cue_anchors: Array.isArray(e.cue_anchors) ? e.cue_anchors : undefined,
         source: 'neighbor',
       })
       out.set(nb.anchorId, list)

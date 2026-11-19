@@ -204,6 +204,8 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
       let snapshotMemories: any[] | undefined;
       let snapshotT1: any[] | undefined;
       let snapshotT1Rendered = false;
+      /** Cost of the serve-time admission/re-render (recorded as `render`). */
+      let snapshotAdaptMs = 0;
       const snapCfg = config.search.snapshot;
       if (snapCfg?.enabled && sessionID) {
         try {
@@ -214,47 +216,75 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
           if (decision === 'use' && snap) {
             const snapFok = snap.fokStatus ?? 'inject';
             if (snapFok === 'inject') {
-            servedRoute = 'snapshot';
-            snapshotPointers = snap.block;
-            snapshotFokStatus = snapFok;
-            snapshotMemories = Array.isArray(snap.memories) ? snap.memories : undefined;
-            snapshotT1 = Array.isArray(snap.t1Hits) ? snap.t1Hits : undefined;
-            snapshotT1Rendered = snap.t1Rendered === true;
-            // A3: a served snapshot is a real injection — record exposure
-            // for the daily ACT-R settlement (fail-open, in-memory only).
-            try {
-              const { recordRetrievalFromScored } = require('../core/memory/retrieval-events');
-              recordRetrievalFromScored(
-                ((snap.ids ?? []) as string[]).map((id) => ({ entry: { id } })),
-                'recall',
-              );
-            } catch { /* fail-open */ }
-            // T1 observe-only: a served snapshot is exposure of verbatim
-            // evidence. No energy/ranking effect in phase 2A.
-            try {
-              const db: any = deps.getGatewayDb();
-              for (const hit of (snap.t1Hits ?? [])) {
-                if (hit?.traceId) {
-                  db.recordT1RetrievalEvent?.({ traceId: hit.traceId, kind: 'recall', score: hit.score ?? hit.cosine });
-                }
+              // Serve-time admission: `decideSnapshotUse` only proves the new
+              // query still overlaps the snapshot's ROLLING WINDOW, not that
+              // the pre-rendered block answers it ("再分析一下" passes the
+              // containment check and shares nothing with the block). Validate
+              // the structured metadata against the CURRENT query; no support
+              // → the live path below runs instead. Pure and synchronous: this
+              // must stay inside the 100ms contract. A throw is a bug and falls
+              // through to the live path (never a silent serve of stale rows).
+              const { adaptSnapshotToCurrentQuery } = require('../recall/snapshot-current-query');
+              // Pessimistic attribution: if the adapter throws, the outer catch
+              // serves the live path, and the recorded decision must not claim
+              // `use` for a snapshot that never rendered. Restored on serve.
+              snapshotDecision = 'current-query-filter';
+              const tAdapt0 = Date.now();
+              const snapT1MaxChars = (snapCfg as Record<string, unknown>).t1MaxChars as number | undefined;
+              const adapted = adaptSnapshotToCurrentQuery(snap, query, { t1MaxChars: snapT1MaxChars });
+              snapshotAdaptMs = Date.now() - tAdapt0;
+              if (adapted.action === 'fallback') {
+                log.info(`[Recall] snapshot skipped (current-query-filter=${adapted.reason}) for ${sessionID}`);
+              } else {
+                snapshotDecision = 'use';
+                const served = adapted.snapshot;
+                servedRoute = 'snapshot';
+                snapshotPointers = served.block;
+                snapshotFokStatus = snapFok;
+                snapshotMemories = Array.isArray(served.memories) ? served.memories : undefined;
+                snapshotT1 = Array.isArray(served.t1Hits) ? served.t1Hits : undefined;
+                snapshotT1Rendered = served.t1Rendered === true;
+                // A3: a served snapshot is a real injection — record exposure
+                // for the daily ACT-R settlement (fail-open, in-memory only).
+                // Only the FILTERED ids: a dropped pointer was not shown.
+                try {
+                  const { recordRetrievalFromScored } = require('../core/memory/retrieval-events');
+                  recordRetrievalFromScored(
+                    ((served.ids ?? []) as string[]).map((id) => ({ entry: { id } })),
+                    'recall',
+                  );
+                } catch { /* fail-open */ }
+                // T1 observe-only: a served snapshot is exposure of verbatim
+                // evidence. Filtered-out T1 rows are not exposure.
+                try {
+                  const db: any = deps.getGatewayDb();
+                  for (const hit of (served.t1Hits ?? [])) {
+                    if (hit?.traceId) {
+                      db.recordT1RetrievalEvent?.({ traceId: hit.traceId, kind: 'recall', score: hit.score ?? hit.cosine });
+                    }
+                  }
+                } catch { /* fail-open */ }
+                // A4 hit-proxy: log the probability-gated injection as a
+                // calibration sample — hit when a pointer is later redeemed
+                // via mafw_get_memory (join by id within TTL).
+                try {
+                  if (Number.isFinite(served.top1prob)) {
+                    const { appendFokEvent } = require('../recall/fok-samples');
+                    appendFokEvent({
+                      e: 'inj',
+                      ts: Date.now(),
+                      top1prob: served.top1prob,
+                      zone: served.fokStatus ?? 'inject',
+                      ids: (served.ids ?? []) as string[],
+                    });
+                  }
+                } catch { /* fail-open */ }
+                log.info(
+                  `[Recall] snapshot served for ${sessionID} (age=${Date.now() - Date.parse(served.builtAt)}ms, `
+                  + `fok=${served.fokStatus ?? 'inject'}, filtered=${adapted.kept.filtered}, `
+                  + `kept anchors=${adapted.kept.anchors} neighbours=${adapted.kept.neighbors} t1=${adapted.kept.t1})`,
+                );
               }
-            } catch { /* fail-open */ }
-            // A4 hit-proxy: log the probability-gated injection as a
-            // calibration sample — hit when a pointer is later redeemed
-            // via mafw_get_memory (join by id within TTL).
-            try {
-              if (Number.isFinite(snap.top1prob)) {
-                const { appendFokEvent } = require('../recall/fok-samples');
-                appendFokEvent({
-                  e: 'inj',
-                  ts: Date.now(),
-                  top1prob: snap.top1prob,
-                  zone: snap.fokStatus ?? 'inject',
-                  ids: (snap.ids ?? []) as string[],
-                });
-              }
-            } catch { /* fail-open */ }
-            log.info(`[Recall] snapshot served for ${sessionID} (age=${Date.now() - Date.parse(snap.builtAt)}ms, fok=${snap.fokStatus ?? 'inject'})`);
             } else {
               // Decision said "use" but the snapshot carries no reliable
               // recall body: the fallback search serves this turn. Record the
@@ -439,7 +469,9 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
       const formatted = snapshotPointers
         ? { pointers: snapshotPointers }
         : formatRecallContext(memories, { status: fokStatus, neighbors });
-      if (!snapshotPointers) recordRecallStage('render', Date.now() - tRender0);
+      // A served snapshot renders nothing here (the adapter already produced the
+      // block), but its admission/re-render cost is real work on the same stage.
+      recordRecallStage('render', snapshotPointers ? snapshotAdaptMs : Date.now() - tRender0);
       const { hasRelatedRecallBody, renderTopicRecallHeader } = require('../recall/topic-recall');
       const hasRelated = hasRelatedRecallBody(
         formatted.pointers,

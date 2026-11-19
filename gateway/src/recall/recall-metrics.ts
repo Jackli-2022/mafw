@@ -40,7 +40,7 @@ export const RECALL_STAGE_KEYS: readonly RecallStageKey[] = [
   'total',
 ];
 
-export type RecallSnapshotDecision = 'use' | 'stale' | 'topic-shift' | 'fok' | 'no-snapshot';
+export type RecallSnapshotDecision = 'use' | 'stale' | 'topic-shift' | 'fok' | 'no-snapshot' | 'current-query-filter';
 
 export interface RecallRequestMetrics {
   route: 'snapshot' | 'fallback';

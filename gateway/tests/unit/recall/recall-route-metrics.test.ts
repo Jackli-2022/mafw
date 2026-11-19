@@ -14,8 +14,13 @@ import {
   resetRecallMetricsForTest,
   snapshotRecallMetrics,
 } from '../../../src/recall/recall-metrics';
+import { RetrievalEventBuffer, setRetrievalEventBufferForTest } from '../../../src/core/memory/retrieval-events';
 import * as recallContext from '../../../src/recall/recall-context';
 import * as recallSnapshot from '../../../src/recall/recall-snapshot';
+
+jest.mock('../../../src/recall/fok-samples', () => ({
+  appendFokEvent: jest.fn(),
+}));
 
 jest.mock('../../../src/recall/recall-context', () => ({
   searchRecallMemories: jest.fn(),
@@ -34,6 +39,9 @@ jest.mock('../../../src/recall/exact-evidence', () => ({
 }));
 
 jest.mock('../../../src/recall/recall-snapshot', () => ({
+  // Keep the real constants (the serve-time adapter reads SNAPSHOT_DEFAULTS);
+  // only the decision functions are pinned by this suite.
+  ...jest.requireActual('../../../src/recall/recall-snapshot'),
   decideSnapshotUse: jest.fn(),
   snapshotContainment: jest.fn(() => 0),
 }));
@@ -47,11 +55,15 @@ const decideSnapshotUse = recallSnapshot.decideSnapshotUse as jest.Mock;
 
 const lexical = require('../../../src/recall/lexical-support');
 const exact = require('../../../src/recall/exact-evidence');
+const fokSamples = require('../../../src/recall/fok-samples');
+
+let retrievalBuffer: RetrievalEventBuffer;
 
 type Handler = (req: IncomingMessage, res: ServerResponse) => Promise<unknown>;
 
-function makeHarness(opts: { snapshotValue?: unknown; destroyed?: boolean } = {}) {
+function makeHarness(opts: { snapshotValue?: unknown; destroyed?: boolean; url?: string } = {}) {
   const handlers: Record<string, Handler> = {};
+  const receipts: any[] = [];
   const registry = {
     attachHandler: (name: string, fn: Handler) => {
       handlers[name] = fn;
@@ -71,6 +83,7 @@ function makeHarness(opts: { snapshotValue?: unknown; destroyed?: boolean } = {}
     getGatewayDb: () =>
       ({ kvGet: () => opts.snapshotValue ?? null, recordT1RetrievalEvent: () => undefined }) as never,
     getScanService: () => null,
+    saveReceipt: (input: any) => { receipts.push(input); },
   } satisfies RecallRouteDeps;
 
   attachRecallRoutes(registry as never, deps);
@@ -89,11 +102,11 @@ function makeHarness(opts: { snapshotValue?: unknown; destroyed?: boolean } = {}
     },
   };
   const req: any = {
-    url: '/api/recall/context?query=hello%20world&sessionID=s1',
+    url: opts.url ?? '/api/recall/context?query=hello%20world&sessionID=s1',
     headers: { host: 'localhost' },
     destroyed: false,
   };
-  return { handler: handlers['recall.context'], res, req };
+  return { handler: handlers['recall.context'], res, req, receipts };
 }
 
 // `config.search` is a getter (no setter): snapshot the values and restore
@@ -110,11 +123,14 @@ beforeAll(() => {
 
 afterAll(() => {
   Object.assign(config.search, originalSearch);
+  setRetrievalEventBufferForTest(null);
 });
 
 beforeEach(() => {
   resetRecallMetricsForTest();
   jest.clearAllMocks();
+  retrievalBuffer = new RetrievalEventBuffer();
+  setRetrievalEventBufferForTest(retrievalBuffer);
   const memories = [memory('mem_aaaaaaaaaa1', 'alpha note')];
   search.mockResolvedValue(memories);
   neighborsFn.mockReturnValue(new Map([['mem_aaaaaaaaaa1', [memory('mem_bbbbbbbbbb2', 'beta note')]]]));
@@ -272,4 +288,139 @@ test('empty query early return is still counted (visible-rate denominator)', asy
   expect(snapshot.requests.total).toBe(1);
   expect(snapshot.requests.byRoute).toEqual({ snapshot: 0, fallback: 1 });
   expect(snapshot.stages.total.count).toBe(1);
+});
+
+test('a snapshot with no support for the current query records current-query-filter and runs the live fallback', async () => {
+  config.search.snapshot = { ...config.search.snapshot, enabled: true };
+  decideSnapshotUse.mockReturnValue('use');
+  fok.mockReturnValue({ zone: 'inject', evaluated: true });
+  // The adapter asks the support selector twice (anchors, then T1 excerpts):
+  // nothing in this snapshot is supported by the current query.
+  lexical.selectLexicallySupportedCandidates.mockReturnValue({ applicable: true, supported: [] });
+
+  try {
+    const { handler, req, res } = makeHarness({
+      snapshotValue: {
+        builtAt: new Date().toISOString(),
+        query: 'memory recall performance window',
+        block: '<recall>stale snapshot body</recall>',
+        fokStatus: 'inject',
+        ids: ['mem_stale000001'],
+        memories: [{ id: 'mem_stale000001', abstraction: 'stale gist', cue_anchors: ['stale'] }],
+        t1Hits: [],
+        t1Rendered: false,
+      },
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body!);
+    expect(body.pointers).not.toContain('stale snapshot body');
+    const metrics = snapshotRecallMetrics();
+    expect(metrics.requests.bySnapshotDecision).toEqual({ 'current-query-filter': 1 });
+    // the fallback route served this turn and the live search really ran
+    expect(metrics.requests.byRoute).toEqual({ snapshot: 0, fallback: 1 });
+    expect(search).toHaveBeenCalled();
+    expect(metrics.stages.search.count).toBe(1);
+    expect(metrics.stages.render.count).toBe(1);
+  } finally {
+    config.search.snapshot = { ...config.search.snapshot, enabled: false };
+  }
+});
+
+test('a throwing adapter falls back to live without recording snapshotDecision=use', async () => {
+  config.search.snapshot = { ...config.search.snapshot, enabled: true };
+  decideSnapshotUse.mockReturnValue('use');
+  fok.mockReturnValue({ zone: 'inject', evaluated: true });
+  lexical.selectLexicallySupportedCandidates.mockImplementation((candidates: unknown[]) => ({
+    applicable: true,
+    supported: candidates,
+  }));
+  const badMemory: any = { id: 'mem_boom000001' };
+  Object.defineProperty(badMemory, 'abstraction', {
+    enumerable: true,
+    configurable: true,
+    get() { throw new Error('adapter boom'); },
+  });
+
+  try {
+    const { handler, req, res } = makeHarness({
+      snapshotValue: {
+        builtAt: new Date().toISOString(),
+        query: 'hello world window',
+        block: '<recall>never served</recall>',
+        fokStatus: 'inject',
+        ids: ['mem_boom000001'],
+        memories: [badMemory],
+        t1Hits: [],
+        t1Rendered: false,
+      },
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body!).pointers).not.toContain('never served');
+    const metrics = snapshotRecallMetrics();
+    // Never "use" for a snapshot that did not render: the pessimistic decision
+    // set before the adapter call survives the throw.
+    expect(metrics.requests.bySnapshotDecision).toEqual({ 'current-query-filter': 1 });
+    expect(metrics.requests.byRoute).toEqual({ snapshot: 0, fallback: 1 });
+    expect(search).toHaveBeenCalled();
+  } finally {
+    config.search.snapshot = { ...config.search.snapshot, enabled: false };
+  }
+});
+
+test('a served snapshot only exposes the current-query-supported block/ids/memories/t1Hits', async () => {
+  config.search.snapshot = { ...config.search.snapshot, enabled: true };
+  decideSnapshotUse.mockReturnValue('use');
+  fok.mockReturnValue({ zone: 'inject', evaluated: true });
+  lexical.selectLexicallySupportedCandidates
+    .mockImplementationOnce((candidates: Array<{ primary_abstraction?: string }>) => ({
+      applicable: true,
+      supported: candidates.slice(0, 1),
+    }))
+    .mockReturnValueOnce({ applicable: true, supported: [] });
+
+  try {
+    const { handler, req, res, receipts } = makeHarness({
+      url: '/api/recall/context?query=hello%20world&sessionID=s1&anchorKey=turn_a',
+      snapshotValue: {
+        builtAt: new Date().toISOString(),
+        query: 'hello world window',
+        block: '<recall>two anchors</recall>',
+        fokStatus: 'inject',
+        top1prob: 0.8,
+        ids: ['mem_keep_000001', 'mem_drop_000002'],
+        memories: [
+          { id: 'mem_keep_000001', abstraction: 'hello alpha' },
+          { id: 'mem_drop_000002', abstraction: 'unrelated beta' },
+        ],
+        t1Hits: [{ sessionId: 's1', turnId: 1, traceId: 't1t_keep', cosine: 0.8, excerpt: 'hello t1' }],
+        t1Rendered: true,
+      },
+    });
+    await handler(req, res);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    const body = JSON.parse(res.body!);
+    expect(body.pointers).toContain('#mem-000001');
+    expect(body.pointers).not.toContain('#mem-000002');
+    expect(body.pointers).not.toContain('[t1|t1t_keep]');
+    // exposure (ACT-R settlement) only for the pointers that were served
+    expect(retrievalBuffer.drain().map((e) => e.id)).toEqual(['mem_keep_000001']);
+    // FOK hit-proxy sample carries the filtered ids
+    expect(fokSamples.appendFokEvent).toHaveBeenCalledWith(expect.objectContaining({ ids: ['mem_keep_000001'] }));
+    // receipt mirrors the filtered anchors + T1
+    expect(receipts).toHaveLength(1);
+    expect(receipts[0].receipt.counts).toEqual({ memories: 1, t1: 0 });
+    const metrics = snapshotRecallMetrics();
+    expect(metrics.requests.bySnapshotDecision).toEqual({ use: 1 });
+    expect(metrics.requests.byRoute).toEqual({ snapshot: 1, fallback: 0 });
+    // the adapter/re-render cost lands on the render stage, not search
+    expect(metrics.stages.render.count).toBe(1);
+    expect(metrics.stages.search.count).toBe(0);
+  } finally {
+    config.search.snapshot = { ...config.search.snapshot, enabled: false };
+  }
 });

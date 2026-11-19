@@ -41,7 +41,10 @@ export interface RecallSnapshot {
   /** True only when `[t1|...]` lines were actually appended to the block. */
   t1Rendered?: boolean;
   /** Structured anchors rendered in the block + bundled temporal neighbours
-   *  (receipt source; anchors ≤ topK, neighbours carry `neighborOf`). */
+   *  (receipt source; anchors ≤ topK, neighbours carry `neighborOf`).
+   *  `cue_anchors` (optional, 2026-11-19) lets the serve path validate the
+   *  anchor against the CURRENT query; snapshots written without it still load
+   *  (title-only support). */
   memories?: Array<{
     id: string;
     type?: string;
@@ -50,6 +53,7 @@ export interface RecallSnapshot {
     energy?: number;
     pinned?: boolean;
     neighborOf?: string;
+    cue_anchors?: string[];
   }>;
   /** Episode hits fused into this snapshot when episodes are live. */
   episodes?: import('./t1-episode-search').EpisodeHit[];

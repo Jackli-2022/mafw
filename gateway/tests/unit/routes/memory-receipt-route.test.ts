@@ -41,10 +41,13 @@ function snapshot() {
       abstraction: '用户偏好 TDD',
       date: '2026-10-01T00:00:00.000Z',
       energy: 0.8,
+      // The snapshot serve path now validates metadata against the CURRENT
+      // query (`query=hello`), so this fixture must actually support it.
+      cue_anchors: ['hello', 'TDD'],
     }],
     t1Hits: [
-      { sessionId: 's1', turnId: 1, traceId: 't1t_a', cosine: 0.9, excerpt: '元信息怎么展示', source: 'user' },
-      { sessionId: 's1', turnId: 2, traceId: 't1t_b', cosine: 0.7, excerpt: 'ok | packages\\desktop', source: 'tool' },
+      { sessionId: 's1', turnId: 1, traceId: 't1t_a', cosine: 0.9, excerpt: 'hello 元信息怎么展示', source: 'user' },
+      { sessionId: 's1', turnId: 2, traceId: 't1t_b', cosine: 0.7, excerpt: 'hello | packages\\desktop', source: 'tool' },
     ],
     t1Rendered: true,
   };

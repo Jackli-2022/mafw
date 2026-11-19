@@ -164,6 +164,8 @@ opencode server 进程                    Gateway 进程
 - 失败排查：`/api/recall/context` 的 snapshot 决策日志带 `containment=` 与查询长度；短指令（"继续"/"可以"）与内容窗口天然零重叠，此时走实时路径是正确的
 
 **R8 预取快照**（`search.snapshot`，默认 off→生产已开）：`/api/obs/capture` 的 `user_input` 触发每会话防抖（2s）后台构建——滚动窗口查询（**最近 4 个逻辑轮 / 600 字符**，轮次取自 `t1_turns` + `t1_archive ∪ t1_observations` 的 active+archive 视图，见下节；最后一轮只含 session 词汇 ~36%）→ hybrid（R2 dense RRF）+ R3 rerank + R5 FOK + R6 邻居 → 渲染块存 kv（scope `recall-snapshot`）；边界路径命中即服务（TTL 10min + **包含度**≥0.25 判定话题未漂移），否则回落实时 BM25。
+
+**Snapshot 当前轮质量门（2026-11-19）**：`decideSnapshotUse='use'` 且 FOK=`inject` 后，还要经 `snapshot-current-query.ts` 用当前 query 对结构化 Harmonic/T1 metadata 做词级支持校验；无 query units 或零支持时记 `snapshotDecision='current-query-filter'` 并回 live fallback，不能直接服务“构建时相关、当前轮已不相关”的旧块。实际过滤时只保留受支持 anchor、独立受支持且 anchor 保留的邻居，并重渲染；T1 与已渲染 Harmonic 标题共享长度 ≥12 ASCII 标识短语时去重（不使用未展示的 cue）。未过滤任何内容时保留原 block 逐字不变；legacy 无结构化 metadata 快照维持旧行为至 TTL 到期，episodes snapshot 暂回 live。该门不改变 FOK、live lexical veto 或 snapshot build。
 - **话题判定必须用包含度（overlap/min 侧）而非 Jaccard**：Jaccard 对"600 字符窗口 vs 15 token 追问"有长度偏置，实测 158/246 次快照被误跳过
 - 定位延迟用 `/api/recall/context` 的 `[Recall] timing` debug 日志（search/noteBoard/goal/neighbours 分段）
 
