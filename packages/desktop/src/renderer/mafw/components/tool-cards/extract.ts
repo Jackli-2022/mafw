@@ -59,7 +59,7 @@ function summarize(v: unknown): string {
 /**
  * 兜底渲染：任何工具输出都能得到非空内容。
  * 合法 JSON 对象 → 顶层键值表；数组 → 列表；非 JSON → 原文 code 段。
- * 各工具 spec 的 extract 返回空时由 familyCard 回退到这里，杜绝"空卡片"。
+ * 各工具 spec 的 extract 返回空时由 familySections 回退到这里，杜绝"空卡片"。
  */
 export function genericSections(output: string | undefined): Section[] {
   if (!output) return []
