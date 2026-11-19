@@ -191,7 +191,7 @@ import {
   type SceneSubject,
 } from "./documents/scene-tabs"
 import { stageActionFor } from "./focus/stage-dispatch"
-import { WORKBENCH_PAGE_META, isStalePageActiveTab, type WorkbenchPageId } from "./focus/workbench-pages"
+import { WORKBENCH_PAGE_IDS, WORKBENCH_PAGE_META, isStalePageActiveTab, type WorkbenchPageId } from "./focus/workbench-pages"
 import { DockEmpty } from "./components/dock-panel"
 import { openGoalFocus as applyGoalFocus } from "./focus/goal-focus"
 import type { FocusOpenRequest } from "./focus/focus-open"
@@ -714,10 +714,6 @@ export function MafwShell() {
     openGoalComposer()
   }
   // 旧 goals / workspace 目的地兼容：不再渲染全页工作空间，统一进右工作台「工作」。
-  createEffect(() => {
-    if (activeTab() === "goals") openProjectWork()
-  })
-
   const activeHandoffRole = (): string | undefined => {
     const sid = activeSessionId()
     if (!sid) return undefined
@@ -862,35 +858,34 @@ export function MafwShell() {
   })
 
   const paletteItems = (): PaletteItem[] => {
-    const nav = (id: NavTab, label: string, hint: string): PaletteItem => ({
-      id: `tab-${id}`, label, hint, group: "导航",
-      run: () => { setShowWelcome(false); setActiveTab(id) },
-    })
     return [
-      nav("chat", "聊天", "Chat"),
+      {
+        id: "tab-chat", label: "聊天", hint: "Chat", group: "导航",
+        run: () => navigateWorkbench("chat"),
+      },
       {
         id: "project-work", label: "项目工作", hint: "Work", group: "导航",
-        run: () => openProjectWork(),
+        run: () => navigateWorkbench("goals"),
       },
       {
         id: "memory", label: "记忆", hint: "Memory", group: "导航",
-        run: () => openMemoryFocus(),
+        run: () => navigateWorkbench("memory"),
       },
       {
         id: "approvals", label: "审批", hint: "Approvals", group: "导航",
-        run: () => openPageFocus("approvals"),
+        run: () => navigateWorkbench("approvals"),
       },
       {
         id: "triage", label: "分诊", hint: "Triage", group: "导航",
-        run: () => openPageFocus("triage"),
+        run: () => navigateWorkbench("triage"),
       },
       {
         id: "automation", label: "自动化", hint: "Automations", group: "导航",
-        run: () => openPageFocus("automation"),
+        run: () => navigateWorkbench("automation"),
       },
       {
         id: "mcp", label: "MCP 服务器", hint: "MCP", group: "导航",
-        run: () => openPageFocus("mcp"),
+        run: () => navigateWorkbench("mcp"),
       },
       {
         id: "new-session", label: "新建会话", hint: "New session", group: "会话",
@@ -980,7 +975,7 @@ export function MafwShell() {
           openSessionTab(link.id)
         } else if (link.kind === "tab") {
           setShowWelcome(false)
-          setActiveTab(link.id as any)
+          navigateWorkbench(link.id)
         }
       }
     })
@@ -2321,6 +2316,10 @@ export function MafwShell() {
   const welcomeFull = () => activeTab() === "chat" && (showWelcome() || !activeSessionId())
   const chatActive = () => activeTab() === "chat" && !welcomeFull()
   const workbenchContent = (): WorkbenchContentMode => "project"
+  // 主区只承载 chat：任何遗留的 setActiveTab(页面) 都立即回正；页面只进右工作台。
+  createEffect(() => {
+    if (activeTab() !== "chat") setActiveTab("chat")
+  })
   const narrowChat = () => narrowZone() && narrowView() === "chat"
   const chatSplit = () => workbenchSplit({ content: workbenchContent(), open: rightDockOpen() })
   const focusActive = () => workbenchFocusActive({ focus: workbenchFocus(), content: workbenchContent(), open: rightDockOpen() })
@@ -2814,6 +2813,15 @@ export function MafwShell() {
     setConfigSection(section)
     openPageFocus("config")
     requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("mafw:open-config", { detail: section })))
+  }
+  /** 统一导航出口：主区只有 chat；工作 / 记忆 / 页面全部落到右工作台。 */
+  const navigateWorkbench = (tab: string) => {
+    if (tab === "chat") { setShowWelcome(false); setActiveTab("chat"); return }
+    if (tab === "goals" || tab === "workspace") { openProjectWork(); return }
+    if (tab === "memory") { openMemoryFocus(); return }
+    if (tab === "config") { openConfigPage(); return }
+    if (WORKBENCH_PAGE_IDS.includes(tab as WorkbenchPageId)) { openPageFocus(tab as WorkbenchPageId); return }
+    setActiveTab("chat")
   }
   const openBrowserFocus = (url: string, opts?: { newTab?: boolean }) => {
     revealWorkbench()
@@ -4800,7 +4808,7 @@ export function MafwShell() {
                           onOpenSubagent={(id) => void openSubagentSession(id)}
                           onOpenUsage={() => openConfigPage("usage")}
                           currentProject={currentProject() ?? undefined}
-                          onNavigateTab={(t) => { setActiveTab(t as any) }}
+                          onNavigateTab={(t) => navigateWorkbench(t)}
                           onToggleTheme={toggleTheme}
                           onOpenSettings={() => openConfigPage()}
                           onModelSelect={onModelSelect}
@@ -4885,7 +4893,7 @@ export function MafwShell() {
                      historySessions={historySessions()}
                      onSelect={(sid) => { const h = historySessions().find(x => x.id === sid); openSessionTab(sid, h?.title) }}
                      onCreate={() => void createSession()}
-                     onNavigate={(t) => { setActiveTab(t); closeLeftDockIfOverlay() }}
+                     onNavigate={(t) => { navigateWorkbench(t); closeLeftDockIfOverlay() }}
                      onOpenLead={openLeadEntry}
                      onOpenWork={openProjectWork}
                      onOpenGoalComposer={openNewGoalComposer}
@@ -4920,14 +4928,6 @@ export function MafwShell() {
                   </PopoverShell>
                 </Show>
               </div>
-            ) : activeTab() === "approvals" ? (
-              <ApprovalsPage permissionCards={pendingPermissionCards} onPermissionReply={permReply} />
-            ) : activeTab() === "triage" ? (
-              <TriagePage onOpenGoals={openProjectWork} />
-            ) : activeTab() === "automation" ? (
-              <AutomationsPage />
-            ) : activeTab() === "mcp" ? (
-              <McpPage />
             ) : null}
           </div>
           <Show when={chatSplit() && !focusActive() && !narrowZone()}>

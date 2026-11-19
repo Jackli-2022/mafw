@@ -15,6 +15,6 @@ test("TriagePage has a compact dock mode", () => {
 
 test("triage opens in the right workbench from the palette and renderPage", () => {
   const shell = read("../MafwShell.tsx")
-  assert.match(shell, /openPageFocus\("triage"\)/)
+  assert.match(shell, /navigateWorkbench\("triage"\)/)
   assert.match(shell, /case "triage":\s*\n\s*return <TriagePage compact onOpenGoals=\{openProjectWork\} \/>/)
 })

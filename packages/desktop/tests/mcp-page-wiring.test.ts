@@ -12,9 +12,9 @@ const css = read("src/renderer/mafw/mafw.css")
 
 test("MCP is a first-class nav destination", () => {
   assert.match(nav, /"mcp"/)
-  assert.match(shell, /<McpPage \/>/)
+  assert.match(shell, /<McpPage compact \/>/)
   assert.match(shell, /onMcp=/)
-  assert.match(shell, /nav\("mcp"/)
+  assert.match(shell, /navigateWorkbench\("mcp"\)/)
   assert.match(rail, /icon: "mcp"/)
   assert.match(chat, /trigger: "\/mcp"/)
 })

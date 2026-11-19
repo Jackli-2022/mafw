@@ -12,7 +12,7 @@ test("Memory opens as a right-workbench focus, not a main-area tab", () => {
   assert.match(shell, /renderMemory=\{\(\) => <MemoryPage compact \/>\}/)
   assert.match(shell, /subject\.kind === "memory" \? "项目" : focusScopeLabel\(focus\.scope\)/)
   assert.match(shell, /id: "memory", label: "记忆", hint: "Memory", group: "导航"/)
-  assert.match(shell, /run: \(\) => openMemoryFocus\(\)/)
+  assert.match(shell, /run: \(\) => navigateWorkbench\("memory"\)/)
   assert.doesNotMatch(shell, /nav\("memory"/)
   assert.doesNotMatch(shell, /setActiveTab\("memory"\)/)
   assert.doesNotMatch(shell, /activeTab\(\) === "memory"/)

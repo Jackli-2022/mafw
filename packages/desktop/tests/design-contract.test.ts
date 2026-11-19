@@ -911,7 +911,7 @@ describe("layout-toggles — 顶行右端面板开关（左端由 IconRail 接�
     expect(shell).not.toMatch(/chatActive\(\) && rightDockOpen\(\)/)
     expect(shell).toMatch(/workbenchSplit\(\{ content: workbenchContent\(\), open: rightDockOpen\(\) \}\)/)
     expect(shell).toMatch(/workbenchShellHidden\(\{ content: workbenchContent\(\), open: rightDockOpen\(\) \}\)/)
-    expect(shell).toMatch(/<Show when=\{!showConfig\(\)\}>/)
+    expect(shell).not.toMatch(/showConfig/)
   })
   test("Focus 全宽：detent 快照恢复 + 不持久化", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")

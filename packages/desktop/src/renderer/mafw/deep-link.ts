@@ -1,7 +1,7 @@
 // Deep link routing for the mafw:// protocol (registered in main, forwarded
 // to the renderer via preload's onDeepLink). Pure parser so routing is
 // testable without Electron.
-const KNOWN_TABS = new Set(["chat", "goals", "workspace", "memory", "approvals", "triage", "automation"])
+const KNOWN_TABS = new Set(["chat", "goals", "workspace", "memory", "approvals", "triage", "automation", "mcp", "config"])
 
 export type DeepLink =
   | { kind: "session"; id: string }

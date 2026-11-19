@@ -22,6 +22,6 @@ test("automation form fields are class-driven, not fixed inline widths", () => {
 
 test("automations opens in the right workbench from the palette and renderPage", () => {
   const shell = read("../MafwShell.tsx")
-  assert.match(shell, /openPageFocus\("automation"\)/)
+  assert.match(shell, /navigateWorkbench\("automation"\)/)
   assert.match(shell, /case "automation":\s*\n\s*return <AutomationsPage compact \/>/)
 })

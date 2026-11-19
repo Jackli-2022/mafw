@@ -12,7 +12,7 @@ test("the goals page is retired and legacy routes redirect to right work", () =>
   assert.doesNotMatch(shell, /import \{ WorkspaceHome \}/)
   assert.doesNotMatch(shell, /<WorkspaceHome/)
   assert.doesNotMatch(shell, /activeTab\(\) === "goals" \? \(/)
-  assert.match(shell, /if \(activeTab\(\) === "goals"\) openProjectWork\(\)/)
+  assert.match(shell, /if \(tab === "goals" \|\| tab === "workspace"\) \{ openProjectWork\(\); return \}/)
   assert.match(shell, /function openProjectWork|const openProjectWork/)
   assert.doesNotMatch(nav, /id: "goals"/)
   assert.match(deepLink, /id === "workspace"\) return \{ kind: "tab", id: "goals" \}/)
@@ -43,7 +43,7 @@ test("Welcome no longer maintains the legacy in-memory Goal list", () => {
 test("command palette opens project work in the right workbench", () => {
   const shell = read("../src/renderer/mafw/MafwShell.tsx")
   assert.match(shell, /id: "project-work", label: "项目工作"/)
-  assert.match(shell, /run: \(\) => openProjectWork\(\)/)
+  assert.match(shell, /run: \(\) => navigateWorkbench\("goals"\)/)
   assert.match(shell, /onOpenGoals=\{openProjectWork\}/)
   assert.doesNotMatch(shell, /nav\("goals", "Goals", "编排总览"\)/)
 })
