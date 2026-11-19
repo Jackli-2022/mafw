@@ -21,7 +21,7 @@ import { useData, type UiAssistantMessage, type UiMessage, type UiUserMessage } 
 import { shouldShowStreamingCaret } from "./streaming-caret"
 import { useFileComponent } from "@mafw/ui/context/file"
 import { useDialog } from "@mafw/ui/context/dialog"
-import { type UiI18n, useI18n } from "@mafw/ui/context/i18n"
+import { useI18n } from "@mafw/ui/context/i18n"
 import { BasicTool, GenericTool } from "./basic-tool"
 import { Collapsible } from "@mafw/ui/collapsible"
 import { FileIcon } from "@mafw/ui/file-icon"
@@ -348,17 +348,6 @@ function getDirectory(path: string | undefined) {
 import type { IconProps } from "@mafw/ui/icon"
 import { modelName } from "../util/model-name"
 
-export type ToolInfo = {
-  icon: IconProps["name"]
-  title: string
-  subtitle?: string
-}
-
-function agentTitle(i18n: UiI18n, type?: string) {
-  if (!type) return i18n.t("ui.tool.agent.default")
-  return i18n.t("ui.tool.agent", { type })
-}
-
 const agentTones: Record<string, string> = {
   ask: "var(--icon-agent-ask-base)",
   build: "var(--icon-agent-build-base)",
@@ -454,109 +443,6 @@ function webSearchProviderLabel(provider: unknown) {
   if (provider === "parallel") return "Parallel Web Search"
   if (provider === "exa") return "Exa Web Search"
   return "Web Search"
-}
-
-export function getToolInfo(
-  tool: string,
-  input: any = {},
-  metadata: Record<string, unknown> | undefined = {},
-  directory?: string,
-): ToolInfo {
-  const i18n = useI18n()
-  const name = TOOL_NAME_ALIASES[tool] ?? tool
-  switch (name) {
-    case "read":
-      return {
-        icon: "glasses",
-        title: i18n.t("ui.tool.read"),
-        subtitle: readPathInput(input) ? relativePath(readPathInput(input)!, directory) || getFilename(readPathInput(input)!) : undefined,
-      }
-    case "list":
-      return {
-        icon: "bullet-list",
-        title: i18n.t("ui.tool.list"),
-        subtitle: input.path ? relativePath(input.path, directory) || getDirectory(input.path) : undefined,
-      }
-    case "glob":
-      return {
-        icon: "magnifying-glass-menu",
-        title: i18n.t("ui.tool.glob"),
-        subtitle: input.pattern,
-      }
-    case "grep":
-      return {
-        icon: "magnifying-glass-menu",
-        title: i18n.t("ui.tool.grep"),
-        subtitle: input.pattern,
-      }
-    case "webfetch":
-      return {
-        icon: "window-cursor",
-        title: i18n.t("ui.tool.webfetch"),
-        subtitle: input.url,
-      }
-    case "websearch":
-      return {
-        icon: "window-cursor",
-        title: webSearchProviderLabel(metadata?.provider),
-        subtitle: input.query,
-      }
-    case "task": {
-      const raw = typeof input.agent === "string" ? input.agent : undefined
-      const type = raw ? raw[0]!.toUpperCase() + raw.slice(1) : undefined
-      return {
-        icon: "task",
-        title: agentTitle(i18n, type),
-        subtitle: input.description,
-      }
-    }
-    case "bash":
-      return {
-        icon: "console",
-        title: i18n.t("ui.tool.shell"),
-        subtitle: input.command,
-      }
-    case "edit":
-      return {
-        icon: "code-lines",
-        title: i18n.t("ui.messagePart.title.edit"),
-        subtitle: readPathInput(input) ? relativePath(readPathInput(input)!, directory) || getFilename(readPathInput(input)!) : undefined,
-      }
-    case "write":
-      return {
-        icon: "code-lines",
-        title: i18n.t("ui.messagePart.title.write"),
-        subtitle: readPathInput(input) ? relativePath(readPathInput(input)!, directory) || getFilename(readPathInput(input)!) : undefined,
-      }
-    case "apply_patch":
-      return {
-        icon: "code-lines",
-        title: i18n.t("ui.tool.patch"),
-        subtitle: input.files?.length
-          ? `${input.files.length} ${i18n.t(input.files.length > 1 ? "ui.common.file.other" : "ui.common.file.one")}`
-          : undefined,
-      }
-    case "todowrite":
-      return {
-        icon: "checklist",
-        title: i18n.t("ui.tool.todos"),
-      }
-    case "question":
-      return {
-        icon: "bubble-5",
-        title: i18n.t("ui.tool.questions"),
-      }
-    case "skill":
-      return {
-        icon: "brain",
-        title: input.name || i18n.t("ui.tool.skill"),
-      }
-    default:
-      return {
-        icon: "mcp",
-        title: tool,
-      }
-  }
 }
 
 function urls(text: string | undefined) {

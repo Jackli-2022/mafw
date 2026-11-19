@@ -125,6 +125,13 @@ describe("rich card bodies", () => {
     expect(componentSource).toContain("renderSections={entry()?.renderSections}")
     expect(componentSource).toContain("renderSections={props.entry.renderSections}")
   })
+
+  test("does not keep the legacy getToolInfo duplicate", () => {
+    expect(componentSource).not.toContain("function getToolInfo")
+    expect(componentSource).not.toContain("type ToolInfo")
+    expect(componentSource).not.toContain("function agentTitle")
+    expect(componentSource).not.toContain("UiI18n")
+  })
 })
 
 describe("readPartText", () => {
