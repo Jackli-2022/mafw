@@ -9,6 +9,7 @@
  */
 import * as crypto from 'crypto';
 import * as http from 'http';
+import * as https from 'https';
 import * as net from 'net';
 import { TUNNEL_HEADER } from '../core/auth';
 
@@ -23,6 +24,8 @@ export interface TunnelTerminatorOptions {
   listenPort?: number;
   /** M0: if the requested port is busy, retry on an ephemeral port. */
   fallbackToEphemeral?: boolean;
+  /** M2: terminate gateway TLS here (relay host client pipes raw TLS bytes in). */
+  tls?: { key: string; cert: string };
 }
 
 export interface TunnelTerminator {
@@ -40,7 +43,7 @@ export function createTunnelTerminator(opts: TunnelTerminatorOptions): TunnelTer
   const listenHost = opts.listenHost ?? '127.0.0.1';
   const listenPort = opts.listenPort ?? 3001;
 
-  let server: http.Server | null = null;
+  let server: http.Server | https.Server | null = null;
   let boundPort: number | null = null;
   const sockets = new Set<net.Socket>();
   const upstreamSockets = new Set<net.Socket>();
@@ -133,7 +136,10 @@ export function createTunnelTerminator(opts: TunnelTerminatorOptions): TunnelTer
       if (server && boundPort !== null) return boundPort;
 
       const startOn = (port: number): Promise<void> => new Promise<void>((resolve, reject) => {
-        const next = http.createServer((req, res) => proxyRequest(req, res));
+        const handler = (req: http.IncomingMessage, res: http.ServerResponse) => proxyRequest(req, res);
+        const next = opts.tls
+          ? https.createServer({ key: opts.tls.key, cert: opts.tls.cert }, handler)
+          : http.createServer(handler);
         next.on('upgrade', (req, socket, head) => proxyUpgrade(req, socket as net.Socket, head));
         next.on('connection', (socket) => {
           sockets.add(socket);

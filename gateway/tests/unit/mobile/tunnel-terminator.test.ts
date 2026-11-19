@@ -4,11 +4,16 @@
  * HTTP and WebSocket upgrades.
  */
 import * as http from 'http';
+import * as https from 'https';
 import * as net from 'net';
+import * as os from 'os';
+import * as fs from 'fs';
+import * as path from 'path';
 import { once } from 'events';
 import { WebSocket, WebSocketServer } from 'ws';
 import { TUNNEL_HEADER } from '../../../src/core/auth';
 import { createTunnelTerminator, newTunnelSecret } from '../../../src/mobile/tunnel-terminator';
+import { loadOrCreateRelayIdentity } from '../../../src/mobile/relay-identity';
 
 const SECRET = newTunnelSecret();
 
@@ -161,6 +166,46 @@ describe('tunnel terminator (M0)', () => {
 
     await terminator.stop();
     target.closeAllConnections?.();
+    await closeServer(target);
+  });
+
+  it('serves TLS with the supplied certificate and still injects the marker', async () => {
+    const id = loadOrCreateRelayIdentity(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-term-tls-')),
+      { domain: 'relay.example.com' },
+    );
+    let marker = '';
+    const target = http.createServer((req, res) => {
+      marker = String(req.headers[TUNNEL_HEADER] || '');
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+    });
+    const targetPort = await listen(target);
+    const terminator = createTunnelTerminator({
+      secret: SECRET,
+      targetPort,
+      listenPort: 0,
+      tls: { key: id.keyPem, cert: id.certPem },
+    });
+    const port = await terminator.start();
+
+    const body = await new Promise<string>((resolve, reject) => {
+      const req = https.request(
+        { host: '127.0.0.1', port, path: '/api/presence', rejectUnauthorized: false },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+          res.on('end', () => resolve(Buffer.concat(chunks).toString()));
+        },
+      );
+      req.on('error', reject);
+      req.end();
+    });
+
+    expect(JSON.parse(body)).toEqual({ ok: true });
+    expect(marker).toBe(SECRET);
+
+    await terminator.stop();
     await closeServer(target);
   });
 
