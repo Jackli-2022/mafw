@@ -1,6 +1,6 @@
 // packages/desktop/src/renderer/mafw/context-usage.test.ts
 import { describe, expect, test } from "bun:test"
-import { computeContextUsage, formatContextUsage } from "./context-usage"
+import { computeContextUsage, formatContextUsage, latestContextTokens } from "./context-usage"
 
 describe("computeContextUsage", () => {
   test("缓存命中计入上下文（input 很小但 cache.read 很大）", () => {
@@ -28,17 +28,17 @@ describe("computeContextUsage", () => {
 })
 
 describe("formatContextUsage", () => {
-  test("有窗口 → 百分比 + 统一 tooltip", () => {
+  test("有窗口 → 百分比 + 占用 / 容量 / 比率", () => {
     expect(formatContextUsage({ used: 676626, total: 1_000_000, percent: 68 })).toEqual({
       main: "68%",
-      tooltip: "上下文: 677k / 1.0M (68%)",
+      tooltip: "上下文占用 677k · 上下文容量 1.0M · 比率 68%",
     })
   })
 
-  test("窗口未知 → 显示 token 数 + 同一措辞", () => {
+  test("窗口未知 → 显示 token 数 + 容量未知", () => {
     expect(formatContextUsage({ used: 1234, total: 0, percent: 0 })).toEqual({
       main: "1k",
-      tooltip: "上下文: 1k tokens（窗口大小未知）",
+      tooltip: "上下文占用 1k tokens · 容量未知",
     })
   })
 
@@ -52,7 +52,41 @@ describe("formatContextUsage", () => {
   test("不足 1% 显示 <1%（避免歧义）", () => {
     expect(formatContextUsage({ used: 1200, total: 1_000_000, percent: 0 })).toEqual({
       main: "<1%",
-      tooltip: "上下文: 1k / 1.0M (<1%)",
+      tooltip: "上下文占用 1k · 上下文容量 1.0M · 比率 <1%",
     })
+  })
+})
+
+describe("latestContextTokens", () => {
+  test("跳过仍在流式、尚无 tokens 的最新 assistant", () => {
+    const measured = { input: 10, cache: { read: 90 } }
+    const msgs = [
+      { role: "assistant", tokens: measured },
+      { role: "user" },
+      { role: "assistant", time: { created: 2 } },
+    ]
+    expect(latestContextTokens(msgs)).toEqual(measured)
+  })
+
+  test("取最近一条有 token 的 assistant（不是最早）", () => {
+    const msgs = [
+      { role: "assistant", tokens: { input: 1 } },
+      { role: "assistant", tokens: { input: 2 } },
+    ]
+    expect(latestContextTokens(msgs)?.input).toBe(2)
+  })
+
+  test("全零 tokens 不当作已测量，继续向前找", () => {
+    const msgs = [
+      { role: "assistant", tokens: { input: 5 } },
+      { role: "assistant", tokens: { input: 0, cache: { read: 0, write: 0 } } },
+    ]
+    expect(latestContextTokens(msgs)?.input).toBe(5)
+  })
+
+  test("空 / 只有 user → undefined", () => {
+    expect(latestContextTokens([])).toBeUndefined()
+    expect(latestContextTokens([{ role: "user" }])).toBeUndefined()
+    expect(latestContextTokens(null)).toBeUndefined()
   })
 })

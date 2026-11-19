@@ -125,7 +125,7 @@ import type { Checkpoint } from "./checkpoint-model"
 import { allHunksPatches, isInvertiblePatch, revertWarning } from "./checkpoint-revert"
 import { sameQuoteSelection, snapshotQuoteSelection, type QuoteSelectionSnapshot } from "./quote-selection"
 import { createFocusScheduler } from "./composer-focus-scheduler"
-import { computeContextUsage, formatContextUsage } from "../context-usage"
+import { computeContextUsage, formatContextUsage, latestContextTokens } from "../context-usage"
 import { ingestHistoryPage } from "../ingest/messages"
 import { mergeRemoteCommands, mergeDiscoveryCommands, type RuntimeCommandMeta } from "./command-merge"
 import { getDraft, setDraft, clearDraft } from "./session-drafts"
@@ -2384,14 +2384,13 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   const currentModelLabel = createMemo(() => props.model()?.label || modelName())
 
-  // Context usage: last assistant message's prompt tokens (input + cache read/write)
-  // vs model context window. `input` alone excludes prompt-cache hits → always 0%.
+  // Context usage: last measured assistant message's prompt tokens (input + cache
+  // read/write) vs model context window. `input` alone excludes prompt-cache hits → 0%.
+  // 新回合的 assistant 骨架还没有 tokens，必须跳到最近一条已测量消息，否则整轮生成都显示 0%。
   const contextUsage = createMemo(() => {
     const sid = sidProp()
     if (!sid) return { used: 0, total: 0, percent: 0 }
     const msgs = store.message[sid] || []
-    const assistants = msgs.filter(m => m.role === "assistant")
-    const last = assistants[assistants.length - 1]
     const m = props.model()
     let total = 0
     if (m) {
@@ -2403,7 +2402,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         }
       }
     }
-    return computeContextUsage(last?.tokens, total)
+    return computeContextUsage(latestContextTokens(msgs), total)
   })
 
   // Cumulative session tokens + cost (from trajectory data in store)
@@ -2435,21 +2434,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   // 响应式：pill 文案与 tooltip 必须跟随 tokens 更新（Show children 里的普通
   // const 只会在挂载时算一次 → 打开会话早期快照会永久显示 0%）。
   const contextText = createMemo(() => formatContextUsage(contextUsage()))
-  const contextTooltip = createMemo(() => {
-    const ctx = contextUsage()
-    const summary = sessionTokenSummary()
-    const parts: string[] = []
-    if (ctx.used > 0 || ctx.total > 0) parts.push(contextText().tooltip)
-    if (summary.turns > 0) {
-      parts.push(`会话累计: ${fmtCtx(summary.total)} tokens`)
-      parts.push(`输入 ${fmtCtx(summary.input)} · 输出 ${fmtCtx(summary.output)}`)
-      if (summary.reasoning > 0) parts.push(`推理 ${fmtCtx(summary.reasoning)}`)
-      if (summary.cacheRead > 0) parts.push(`缓存命中 ${fmtCtx(summary.cacheRead)}`)
-      if (summary.cost > 0) parts.push(`费用: $${summary.cost.toFixed(4)}`)
-      parts.push(`回合: ${summary.turns}`)
-    }
-    return parts.join(" · ")
-  })
 
   // Titlebar overflow (2026-11-18): keep identity + 交给 Lead inline; every other
   // session action lives in one grouped menu so the title never gets squeezed out.
@@ -3123,7 +3107,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               <PluginComposerActions sessionID={sidProp()} />
             </div>
             <div class="mafw-composer-right">
-              <TooltipV2 value={contextTooltip()} openDelay={300}>
+              <TooltipV2 value={contextText().tooltip} openDelay={300}>
                 <span
                   class="mafw-context-ring"
                   classList={{

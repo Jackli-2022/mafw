@@ -18,6 +18,30 @@ export interface ContextUsage {
   percent: number
 }
 
+export interface ContextMessageLike {
+  role?: string
+  tokens?: ContextTokensLike | null
+}
+
+/**
+ * 最近一条真正带 token 统计的 assistant 消息。
+ * 新回合开始后最新 assistant 还没有 tokens（只有 message.updated 的骨架）；
+ * 直接取最后一条会让上下文占用在整轮生成期间掉回 0%。跳过未测量的消息，
+ * 保留上一次已知占用，回合结束后再随 tokens 更新。
+ */
+export function latestContextTokens(
+  messages: readonly ContextMessageLike[] | null | undefined,
+): ContextTokensLike | undefined {
+  if (!messages?.length) return undefined
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m?.role !== "assistant" || !m.tokens) continue
+    const used = (m.tokens.input || 0) + (m.tokens.cache?.read || 0) + (m.tokens.cache?.write || 0)
+    if (used > 0) return m.tokens
+  }
+  return undefined
+}
+
 export function computeContextUsage(
   tokens: ContextTokensLike | null | undefined,
   contextWindow: number,
@@ -45,13 +69,13 @@ export function formatContextUsage(u: ContextUsage): { main: string; tooltip: st
     const pct = subOne ? "<1%" : `${u.percent}%`
     return {
       main: pct,
-      tooltip: `上下文: ${formatContextTokens(u.used)} / ${formatContextTokens(u.total)} (${pct})`,
+      tooltip: `上下文占用 ${formatContextTokens(u.used)} · 上下文容量 ${formatContextTokens(u.total)} · 比率 ${pct}`,
     }
   }
   if (u.used > 0) {
     return {
       main: formatContextTokens(u.used),
-      tooltip: `上下文: ${formatContextTokens(u.used)} tokens（窗口大小未知）`,
+      tooltip: `上下文占用 ${formatContextTokens(u.used)} tokens · 容量未知`,
     }
   }
   return { main: "—", tooltip: "上下文: 暂无数据" }
