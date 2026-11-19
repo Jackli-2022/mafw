@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onCleanup } from "solid-js"
+import { createSignal, createEffect, onCleanup, Show } from "solid-js"
 import type { TriageItem } from "@mafw/sdk"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { PageHeader } from "../components/PageHeader"
@@ -12,7 +12,7 @@ import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 import { openMenuOnKey } from "../context-menu/menu-key"
 import { triageCardModel, type TriageTone } from "../triage-model"
 
-export function TriagePage(props: { onOpenGoals?: () => void } = {}) {
+export function TriagePage(props: { compact?: boolean; onOpenGoals?: () => void } = {}) {
   const [items, setItems] = createSignal<TriageItem[]>([])
   const [loading, setLoading] = createSignal(true)
   const [dismissConfirmId, setDismissConfirmId] = createSignal<string | null>(null)
@@ -63,8 +63,10 @@ export function TriagePage(props: { onOpenGoals?: () => void } = {}) {
   }
 
   return (
-    <div>
-      <PageHeader title="Triage" subtitle="自动化扫描结果确认" />
+    <div class="mafw-triage-page" classList={{ "is-compact": !!props.compact }}>
+      <Show when={!props.compact}>
+        <PageHeader title="Triage" subtitle="自动化扫描结果确认" />
+      </Show>
         {loading() ? (
           <SkeletonRows rows={3} h="52px" />
       ) : items().length === 0 ? (
@@ -81,7 +83,7 @@ export function TriagePage(props: { onOpenGoals?: () => void } = {}) {
                 <div class="mafw-card-title">{card.title}</div>
                 <div class="mafw-card-meta">{card.meta}</div>
               </div>
-              <div style={{ display: "flex", "align-items": "center", gap: "6px" }}>
+              <div class="mafw-triage-actions">
                 <ButtonV2 variant="outline" size="small" onClick={confirmIt}>确认</ButtonV2>
                 <ButtonV2 variant="ghost" size="small" onClick={proposeConfirm}>提议确认</ButtonV2>
                 <ButtonV2 variant="ghost" size="small" onClick={proposeReject}>提议拒绝</ButtonV2>

@@ -881,7 +881,10 @@ export function MafwShell() {
         run: () => openMemoryFocus(),
       },
       nav("approvals", "审批", "Approvals"),
-      nav("triage", "分诊", "Triage"),
+      {
+        id: "triage", label: "分诊", hint: "Triage", group: "导航",
+        run: () => openPageFocus("triage"),
+      },
       nav("automation", "自动化", "Automations"),
       nav("mcp", "MCP 服务器", "MCP"),
       {
@@ -5025,9 +5028,14 @@ export function MafwShell() {
                   }}
                   onOpenReview={() => openChangesFace({ section: "review" })}
                   renderMemory={() => <MemoryPage compact />}
-                  renderPage={(id) => (
-                    <DockEmpty icon={WORKBENCH_PAGE_META[id].icon} text={`${WORKBENCH_PAGE_META[id].label}页待接入`} />
-                  )}
+                  renderPage={(id) => {
+                    switch (id) {
+                      case "triage":
+                        return <TriagePage compact onOpenGoals={openProjectWork} />
+                      default:
+                        return <DockEmpty icon={WORKBENCH_PAGE_META[id].icon} text={`${WORKBENCH_PAGE_META[id].label}页待接入`} />
+                    }
+                  }}
                   renderWorld={() => (
                     <WorldOverviewStage
                       projectDir={currentProject()}
