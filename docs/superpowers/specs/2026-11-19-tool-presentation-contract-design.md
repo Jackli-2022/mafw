@@ -162,7 +162,9 @@ desktop `extract.ts` 改为 re-export，避免循环依赖（desktop → session
 interface ToolRegistryEntry {
   name: string
   present?: ToolPresenter
-  /** body-only escape hatch，渲染在 ToolCard 的壳内 */
+  /** 折叠态整行自定义（header-only，不含 Collapsible 壳） */
+  renderCollapsed?: (props: ToolProps) => JSX.Element
+  /** 展开态正文自定义（body-only，渲染在 ToolCard 的壳内） */
   renderBody?: ToolComponent
   /** legacy full-card renderer；也是插件覆盖面 */
   render?: ToolComponent
@@ -175,10 +177,19 @@ interface ToolRegistryEntry {
 解析顺序（新）：
 
 1. `override && render` → 完整 legacy 卡（插件覆盖，最高优先）
-2. `present(ctx)` → `ToolCard`；body 用 `renderBody` 或 `presentation.body` 内置渲染器
+2. `present(ctx)` → `ToolCard`：
+   - 折叠行：`renderCollapsed` 优先，否则用 `collapsed` 字段渲染默认一行；
+   - 展开正文：`renderBody` 优先，否则 `expanded.sections` → `expanded.body` → `DEFAULT_EXPANDED`。
 3. `render`（无 `present`）→ legacy 完整卡（过渡期 adapter 只用于 conformance）
 4. `ToolCardSpec` adapter（desktop 注册时注入）
 5. `GenericTool` 的 presentation（`title = called <tool>`，`object = 首个可读字段`）
+
+自定义粒度：
+
+- **只自定义折叠**：注册 `renderCollapsed`，展开仍走默认/`present.expanded`。
+- **只自定义展开**：注册 `renderBody`（或 `expanded.body = "custom"`），折叠仍走默认一行。
+- **两边都自定义**：两个字段都注册；`ToolCard` 只负责 `Collapsible` 的开合与 `data-state`。
+- `renderCollapsed` 只返回 header 内容，不包含自己的 `<Collapsible>`；`renderBody` 只返回正文，不包含 `BasicTool` 壳。
 
 注册表 API 增补：
 
@@ -223,6 +234,7 @@ ToolRegistry.entry(name)                  // 只读快照，调试/测试用
 ### 4.1 状态与尺寸（本稿的调用）
 
 - 不再有“普通聊天 vs 时间线”两套：涉及 ChatView 的三条路径（过程时间线、`AssistantParts`、context 组）都用同一个 `ToolCard`，只有 `open` 一个状态开关。
+- **折叠态固定一行**：占满可用宽度，`min-height` / `max-height` 都是 28px，`white-space: nowrap`，不换行、不撑高；默认行和 `renderCollapsed` 自定义行都遵守这个外框。
 - 字号**统一为 11px / 550**（折叠行标题），目标/路径 **10.5px**，meta/args **10.5px**；整个 ChatView 共用同一套 token，不再按位置覆盖。
 - `collapsed` / `expanded` 由工具显式声明；缺省走 `defaultCollapsed` / `DEFAULT_EXPANDED`，不做“按信息量猜”。
 - `object` 统一用相对路径（`DataProvider.directory`）；context 组用文件名（`mode: "context"`），命令/query 原样，URL 原样。
@@ -292,7 +304,8 @@ ToolRegistry.entry(name)                  // 只读快照，调试/测试用
 - **默认态**：`resolvePresentation(undefined, ctx)` 必须得到非空 `collapsed.title` / `status` 和 `expanded.body === "default"`；每个工具至少能折叠成一行、展开成通用输入/输出。
 - **纯函数**：每个工具 fixture 的 `collapsed` / `expanded` 合并结果合法；空 output / 错误 output 不崩；`body: "custom"` 缺 `renderBody` 直接失败。
 - **注册面 conformance**：`ToolRegistry.names()` 遍历第一方注册名（含 alias）；有 `present` 的必须返回合法 presentation；legacy-only 条目由 adapter 用 `getToolInfo` 合成 `collapsed`，因此 `getToolInfo` 在 Wave 5 前不能删。插件动态注册的卡不进入 session-ui conformance，由 desktop 插件测试覆盖。
-- **状态**：折叠态只有一行；展开态正文按 `sections → body → default` 选择；diff/rich/row 三种正文都能展开。
+- **状态**：折叠态只有一行（28px 高、占满可用宽度、不换行）；展开态正文按 `sections → body → default` 选择；diff/rich/row 三种正文都能展开。
+- **自定义**：`renderCollapsed` 替换折叠行但仍受一行外框；`renderBody` 替换展开正文；只自定义一边时另一边走默认；两边都自定义时 `ToolCard` 只负责开合与 `data-state`。
 - **DOM / 视觉**：不引入 jsdom/happy-dom。字号、路径、chevron、无图标继续用**CSS 源断言 + presentation 单测**；真实交互与视觉走每波真机检查。
 - **迁移回归**：edit/write diff、task 导航、question 答案、MAFW search 结果列表、GenericTool JSON 兜底、插件 `override` restore。
 - **门禁**：session-ui 全量（排除既有 `architecture.test.ts`）、desktop 全量 + `tsgo`、`electron-vite build`；每波都跑。
