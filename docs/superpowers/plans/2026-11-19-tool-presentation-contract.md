@@ -413,22 +413,25 @@ git commit -m "feat(session-ui): unify ChatView tool cards at 11px"
 - Modify: `packages/desktop/src/renderer/mafw/components/tool-cards/execute.tsx`
 - Modify: `packages/desktop/src/renderer/mafw/components/tool-cards/execute-model.ts`
 - Test: `packages/desktop/src/renderer/mafw/components/tool-cards/execute-model.test.ts`
+- Research: `docs/research/2026-11-19-codemode-tool-results.md`
 
 **Interfaces:**
 - Consumes: `present` / `renderBody` escape hatch from Task 2/3.
 - Produces: `execute` collapsed fields (title `Code Mode 执行`, meta `N 次调用`, failed marker) and expanded body = current `MafwExecuteCard` body.
+- Data boundary: `metadata.toolCalls[]` has **name / status / input only**; no per-call output. Only `state.output` (or history `partOutputText`) is available.
 
 - [ ] **Step 1: Write the failing test**
 
-Assert `executeCalls` keeps dotted/bare names, drops malformed entries, and never invents an `output` field. Add a source assertion that the `execute` entry has `present` and `renderBody`.
+Assert `executeCalls` keeps dotted/bare names, drops malformed entries, and **never** returns an `output` field. Add a source assertion that the `execute` entry has `present` and `renderBody`.
 
 - [ ] **Step 2: Run and verify fail**
 
-Run the desktop execute-model test; expected FAIL on the new source assertion.
+Run: `cd packages/desktop && node --conditions=browser --import tsx --import ../../packages/test-shim/register.mjs --test src/renderer/mafw/components/tool-cards/execute-model.test.ts`
+Expected: FAIL on the new source assertion.
 
 - [ ] **Step 3: Implement**
 
-Split `MafwExecuteCard` into `executeCollapsed` (title/meta) + `ExecuteBody` (current `BasicTool` children). Register `{ name: "execute", present, renderBody }`. Keep `defaultOpen: true`, `defer: false`.
+Split `MafwExecuteCard` into `executeCollapsed` (title/meta) + `ExecuteBody` (current `BasicTool` children). Register `{ name: "execute", present, renderBody }`. Keep `defaultOpen: true`, `defer: false`. Do not invent child outputs.
 
 - [ ] **Step 4: Run and verify pass**
 

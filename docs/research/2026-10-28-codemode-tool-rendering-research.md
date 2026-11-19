@@ -1,5 +1,7 @@
 # Code Mode × desktop ChatView 渲染调研（2026-10-28）
 
+> 2026-11-19 更新：复测确认 `metadata.toolCalls` 仍无 per-call output；见 `docs/research/2026-11-19-codemode-tool-results.md`。
+>
 > 范围：opencode 2.1 Code Mode（`execute`）里调用 gateway MCP 时，desktop 能否渲染子工具调用；以及 ChatView 在「工具执行等待结果」期间拖累其他流式输出的原因与优化方向。
 > 方法：opencode 2.1 / dev 源码核对 + 本机 gateway 2.1 真实 SSE 抓帧 + MAFW session-ui 代码与 `markdown-stream` 微基准。
 > 结论先行：**子工具调用数据已经在 `execute` part 的 `metadata.toolCalls` 里，desktop 只缺一张 `execute` 卡；每个子调用的 output 不在 metadata（opencode 刻意不回传），所以 v1 只能做「调用列表 + 最终输出」，做不到每个 gateway MCP 的完整结果卡。第二个问题的主因是单条全局 SSE 上的 progress 突发 + 同步 store patch + prose Markdown 的 O(n²) 投影，三者叠加会挤占其他流式渲染。另：Edit/Write 卡片在 opencode 2.1 下空白是确定的字段漂移（`path`/`metadata.files[]` vs `filePath`/`metadata.filediff`），可直接修。**
