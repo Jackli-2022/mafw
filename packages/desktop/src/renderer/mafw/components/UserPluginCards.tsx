@@ -11,8 +11,9 @@ import type { Widget } from "../../../shared/ui-plugins"
 import { openImageLightbox } from "../image-lightbox"
 import { isUnifiedToolCardClaimed } from "./tool-cards/registered-tools"
 
-// original = undefined 表示该工具本来没有注册卡（默认链是 GenericTool）
-const proxied = new Map<string, ToolComponent | undefined>()
+// original entry = undefined 表示该工具本来没有注册卡（默认链是 GenericTool）
+type RegistryEntry = ReturnType<typeof ToolRegistry.entry>
+const proxied = new Map<string, RegistryEntry>()
 
 function UserPluginProxy(props: ToolProps & { pluginTool: string; original?: ToolComponent }) {
   const settled = () => props.status === "completed" || props.status === "error"
@@ -150,11 +151,11 @@ function WidgetNode(props: { widget: Widget }): JSX.Element {
 }
 
 async function applyUserPluginCards() {
-  // 先恢复所有被代理工具的原始卡（ToolRegistry.register 是覆盖语义；
-  // original 为 undefined 时注册 {name, render: undefined} → getTool 返回
-  // undefined → session-ui 回落 GenericTool）
-  for (const [tool, original] of proxied) {
-    ToolRegistry.register({ name: tool, render: original })
+  // 先恢复所有被代理工具的完整 entry（含 present / handlesError），
+  // 避免只写回 render 时丢掉第一方呈现。
+  for (const [tool, entry] of proxied) {
+    if (entry) ToolRegistry.register(entry)
+    else ToolRegistry.register({ name: tool, render: undefined })
   }
   proxied.clear()
   let entries: Array<{ tool: string; override: boolean }> = []
@@ -167,12 +168,15 @@ async function applyUserPluginCards() {
     if (proxied.has(tool)) continue
     // 统一声明式工具卡已占位：legacy 重扫不得覆盖（Task 10）。
     if (isUnifiedToolCardClaimed(tool)) continue
-    const original = ToolRegistry.render(tool)
-    if (original && !override) continue // 不覆盖已注册卡（spec §3）
-    proxied.set(tool, original)
+    const entry = ToolRegistry.entry(tool)
+    const original = entry?.render
+    if (ToolRegistry.has(tool) && !override) continue // 不覆盖已注册卡（spec §3）
+    proxied.set(tool, entry)
     ToolRegistry.register({
+      ...(entry ?? { name: tool }),
       name: tool,
       render: (props: ToolProps) => <UserPluginProxy {...props} pluginTool={tool} original={original} />,
+      override: true,
     })
   }
 }
@@ -185,12 +189,13 @@ async function applyUserPluginCards() {
  * reclaim it. Returns the restored card for use as the unified fallback.
  */
 export function releaseLegacyToolCard(tool: string): ToolComponent | undefined {
-  const original = proxied.get(tool)
+  const entry = proxied.get(tool)
   const known = proxied.has(tool)
   if (!known) return undefined
-  ToolRegistry.register({ name: tool, render: original })
+  if (entry) ToolRegistry.register(entry)
+  else ToolRegistry.register({ name: tool, render: undefined })
   proxied.delete(tool)
-  return original
+  return entry?.render
 }
 
 /** Re-run the legacy scan (used after unified tool-card revisions release slots). */

@@ -173,6 +173,12 @@ const controller = createUnifiedToolCardController<ToolComponent>({
   listLegacy: () => window.api.mafw.uiPlugins.list(),
   registry: {
     render: (target) => ToolRegistry.render(target),
+    has: (target) => ToolRegistry.has(target),
+    snapshot: (target) => ToolRegistry.entry(target),
+    restore: (target, snapshot) => {
+      if (snapshot) ToolRegistry.register(snapshot as Parameters<typeof ToolRegistry.register>[0])
+      else ToolRegistry.register({ name: target, render: undefined })
+    },
     register: (target, card) => ToolRegistry.register({ name: target, render: card }),
   },
   releaseLegacy: (target) => releaseLegacyToolCard(target),

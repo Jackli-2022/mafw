@@ -32,12 +32,15 @@ function descriptor(name: string, cards: PluginToolCardDescriptor[]): PluginClie
 interface HarnessOptions {
   builtins?: Record<string, string>
   legacy?: string[]
+  /** Simulate presenter-only tools (occupied without a render card). */
+  present?: string[]
   /** Simulate legacy cards already registered (default true when legacy given). */
   legacyApplied?: boolean
 }
 
 function harness(options: HarnessOptions = {}) {
   const registry = new Map<string, string>(Object.entries(options.builtins ?? {}))
+  const present = new Set<string>(options.present ?? [])
   const claims = new Set<string>()
   const declaredLegacy = new Set(options.legacy ?? [])
   // legacy target → restored original card
@@ -62,6 +65,15 @@ function harness(options: HarnessOptions = {}) {
     listLegacy: async () => [...declaredLegacy].map((tool) => ({ tool })),
     registry: {
       render: (target) => registry.get(target),
+      has: (target) => registry.has(target) || present.has(target),
+      snapshot: (target) => ({ present: present.has(target), card: registry.get(target) }),
+      restore: (target, snapshot) => {
+        const state = snapshot as { present: boolean; card?: string }
+        if (state.present) present.add(target)
+        else present.delete(target)
+        if (state.card === undefined) registry.delete(target)
+        else registry.set(target, state.card)
+      },
       register: (target, value) => {
         if (value === undefined) registry.delete(target)
         else registry.set(target, value)
@@ -101,6 +113,7 @@ function harness(options: HarnessOptions = {}) {
   return {
     controller,
     registry,
+    present,
     claims,
     bound,
     fallbacks,
@@ -152,6 +165,25 @@ describe("unified tool-card controller: ownership", () => {
     expect(h.registry.get("bash")).toBe("unified:aaa:card")
     expect(h.bound.find((entry) => entry.target === "bash")?.fallback).toBe("builtin")
     expect(h.claims.has("bash")).toBe(true)
+  })
+
+  test("a presenter-only slot is occupied without override", async () => {
+    const h = harness({ present: ["bash"] })
+    h.setDescriptors([descriptor("aaa", [card()])])
+    await h.controller.apply()
+    expect(h.bound).toHaveLength(0)
+    expect(h.present.has("bash")).toBe(true)
+  })
+
+  test("override wins over a presenter-only slot and restore brings the presentation back", async () => {
+    const h = harness({ present: ["bash"] })
+    h.setDescriptors([descriptor("aaa", [card({ override: true })])])
+    await h.controller.apply()
+    expect(h.registry.get("bash")).toBe("unified:aaa:card")
+    h.setDescriptors([])
+    await h.controller.apply()
+    expect(h.present.has("bash")).toBe(true)
+    expect(h.registry.has("bash")).toBe(false)
   })
 })
 

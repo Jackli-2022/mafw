@@ -20,6 +20,12 @@ import {
 /** Minimal registry surface (ToolRegistry in production, a Map in tests). */
 export interface UnifiedToolCardRegistryPort<TCard> {
   render(target: string): TCard | undefined
+  /** Presenter-only entries count as occupied. Falls back to render() when absent. */
+  has?(target: string): boolean
+  /** Full-entry snapshot taken before a proxy replaces the slot. */
+  snapshot?(target: string): unknown
+  /** Restore the full entry captured by snapshot(). */
+  restore?(target: string, snapshot: unknown): void
   register(target: string, card: TCard | undefined): void
 }
 
@@ -55,12 +61,18 @@ export interface UnifiedToolCardController<TCard> {
 export function createUnifiedToolCardController<TCard>(
   deps: UnifiedToolCardControllerDeps<TCard>,
 ): UnifiedToolCardController<TCard> {
-  // target → fallback card captured before the unified proxy replaced it.
-  const previous = new Map<string, TCard | undefined>()
+  // target → fallback card + full-entry snapshot captured before the proxy.
+  const previous = new Map<
+    string,
+    { card: TCard | undefined; occupied: boolean; snapshot: unknown; hasSnapshot: boolean }
+  >()
   let appliedTargets: string[] = []
 
   const restoreAll = () => {
-    for (const [target, fallback] of previous) deps.registry.register(target, fallback)
+    for (const [target, state] of previous) {
+      if (state.hasSnapshot && deps.registry.restore) deps.registry.restore(target, state.snapshot)
+      else deps.registry.register(target, state.card)
+    }
     previous.clear()
     appliedTargets = []
   }
@@ -84,7 +96,8 @@ export function createUnifiedToolCardController<TCard>(
         // replaced still exists. This is what makes `override` revocable: the
         // fallback (built-in/legacy) is already registered underneath.
         isOccupied: (target) => {
-          if (previous.has(target)) return previous.get(target) !== undefined
+          if (previous.has(target)) return previous.get(target)!.occupied
+          if (deps.registry.has) return deps.registry.has(target)
           return deps.registry.render(target) !== undefined
         },
       })
@@ -99,7 +112,10 @@ export function createUnifiedToolCardController<TCard>(
         // prevents a later legacy rescan from reclaiming the tool.
         if (entry.card.override === true) deps.releaseLegacy(entry.target)
         const fallback = deps.registry.render(entry.target)
-        previous.set(entry.target, fallback)
+        const occupied = fallback !== undefined || (deps.registry.has?.(entry.target) ?? false)
+        const hasSnapshot = !!deps.registry.snapshot
+        const snapshot = deps.registry.snapshot?.(entry.target)
+        previous.set(entry.target, { card: fallback, occupied, snapshot, hasSnapshot })
         deps.bind(entry, fallback)
       }
       appliedTargets = claims
