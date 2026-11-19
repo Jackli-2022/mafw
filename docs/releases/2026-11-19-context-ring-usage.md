@@ -1,7 +1,7 @@
 # 2026-11-19 · 上下文圆环：不在回合开始时掉 0，hover 只留三项
 
 - **版本**：`v5.1.0`（桌面交互修复，不升版本号）
-- **提交**：`7388dd447`
+- **提交**：`0e5821f2a`
 - **范围**：desktop renderer composer 上下文圆环；gateway / runtime 契约零改动
 - **依据**：dev app live 验证 + desktop 全量测试
 
@@ -22,16 +22,17 @@
 
 - `latestContextTokens(messages)` 从后向前找最近一条 `used > 0` 的 assistant tokens：
   新回合期间保留上一轮占用，回合结束后再随 tokens 更新；全零 tokens 视为未测量。
-- 圆环 tooltip 只显示三项：**上下文占用 / 上下文容量 / 比率**；窗口未知时显示
-  「上下文占用 … tokens · 容量未知」。
+- 圆环 tooltip 只显示一行：**`上下文占用：已用/容量(比率)`**，例如
+  `上下文占用：206k/1M(20%)`；窗口未知时显示 `上下文占用：206k（容量未知）`。
 - 标题栏的会话累计 badge 不变（仍是输入 + 输出 + 推理 + 缓存与费用）。
 
 ## 验证
 
-- 新增 **4** 条 `latestContextTokens` 单测：跳过流式骨架、取最近一条已测量、全零跳过、
-  空输入 / 只有 user。`formatContextUsage` 的 tooltip 断言同步更新。
-- desktop 全量：**4169 pass / 0 fail**（基线 4165）。
+- 新增 **5** 条单测：`latestContextTokens` 4 条（跳过流式骨架、取最近一条已测量、全零跳过、
+  空输入 / 只有 user），以及 2^20 窗口格式化为 `1M` 而不是 `1.0M`；`formatContextUsage`
+  的 tooltip 断言同步更新。
+- desktop 全量：**4170 pass / 0 fail**（基线 4165）。
 - `tsgo --noEmit -p tsconfig.json`：通过。
-- `electron-vite build`：通过（48.9s）。
+- `electron-vite build`：通过（46.6s）。
 - live：Lead 会话圆环 **20%**（不再为 0）；hover 文本
-  `上下文占用 206k · 上下文容量 1.0M · 比率 20%`。
+  `上下文占用：206k/1M(20%)`。
