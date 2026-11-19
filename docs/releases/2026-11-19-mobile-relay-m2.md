@@ -2,7 +2,8 @@
 
 - **分支**：`main`
 - **提交**：`70cdf62bf`（identity）、`d961d6b13`（pairing）、`01c7076b5`（TLS terminator）、
-  `e272a0e2c`（tunnel client）、`57dc0aa10`（service + kernel 接线）
+  `e272a0e2c`（tunnel client）、`57dc0aa10`（service + kernel 接线）、`0523d2f25`（首连 claim）、
+  `69c6a8d43`（M1+M2 e2e）
 - **设计**：`docs/superpowers/specs/2026-11-18-mobile-relay-design.md` §7–§9
 - **计划**：`docs/superpowers/plans/2026-11-19-mobile-relay-m2.md`
 
@@ -24,8 +25,11 @@
 - 定向：identity 2、pairing 8、TLS terminator 8、tunnel client 1、relay service 2 → **21/21 pass**。
 - 宽口径：`tests/unit/mobile` + `http` + `routes` → **926/926 pass（111 suites）**。
 - `npx tsc --noEmit -p tsconfig.json` rc=0。
-- 未做：完整的 M1 relay + M2 真链路 TLS e2e（当前用 fake relay + 直连 terminator 验证）；
-  手机端消费 `relayUrl/fp` 是 M3；腾讯云部署/持久化是 M4。
+- **M1 + M2 真链路 e2e**：`npm run test:e2e -w @mafw/relay` **PASS**。
+  M1 relay（构建产物）← WSS ← M2 gateway service；真实 TLS 客户端按 Room SNI 经 relay 到达
+  TLS terminator，校验 HTTP 200、`x-mafw-tunnel` marker、证书 SHA-256 指纹一致。
+  该 e2e 同时暴露并修复了 M1「首个 host hello 不创建 claim」的缺口。
+- 未做：手机端消费 `relayUrl/fp` 是 M3；腾讯云部署/持久化是 M4。
 
 ## 配置示例
 
