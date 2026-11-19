@@ -56,6 +56,31 @@ mafw pair              # 仅生成当前 LAN/Tailscale URL 的配对码
   其余 API 需要设备 token，且只能访问 mobile allowlist。
 - Quick Tunnel 是临时验证路径（随机 URL、无 SSE、200 in-flight、无 uptime 保证）；生产换 named tunnel + Cloudflare Access 或自建 relay。
 
+### 自建 Relay 部署（M4 本地部分，2026-11-19）
+
+```bash
+cd packages/relay
+cp .env.example .env                 # RELAY_DOMAIN
+mkdir -p certs                       # fullchain.pem / privkey.pem（8443 control）
+docker compose up -d --build
+curl http://127.0.0.1:8080/health
+```
+
+- `443` 是裸 TLS/SNI 路由，**不能**让 Caddy 终止；`8443` 是 control WSS（Caddy → `relay:8444`）；
+  `8080` health 只绑 loopback。
+- `RELAY_DB=/data/relay.db` 持久化 room claim；不要删 volume，否则所有手机会要求重新配对。
+- gateway 侧：
+  ```yaml
+  mobile:
+    relay:
+      enabled: true
+      url: wss://relay.example.com:8443
+      roomDomain: relay.example.com
+      localPort: 3002
+  ```
+- 备案完成前不要把生产 443 切到该 relay；本地可用 9443/9444 验证。
+- 本机没有 Docker 时，M4 只验证了 relay 测试与 compose/Caddy 配置，未执行容器构建。
+
 ### 轮换 human token（`mafw rotate-human-token`，2026-11-13 / E11-1）
 
 human token 是 human-only 动作（验收、计划批准、triage 决策、permission 应答…）的唯一凭据，固定放在
