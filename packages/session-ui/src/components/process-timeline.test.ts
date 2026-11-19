@@ -60,6 +60,15 @@ describe('ProcessTimeline', () => {
     expect(styles).toContain('padding-left: var(--mafw-tool-content-left)')
   })
 
+  test('shared ToolCard owns the compact ChatView tokens', () => {
+    const card = fs.readFileSync(new URL('./tool-card.css', import.meta.url), 'utf-8')
+    expect(card).toContain('font-size: 11px')
+    expect(card).toContain('font-size: 10.5px')
+    expect(card).toContain('--mafw-tool-content-left: 6px')
+    expect(card).toContain('calc(100% - 8px)')
+    expect(css()).not.toMatch(/font-size:\s*14px/)
+  })
+
   test('matches the edit card title size to the tool rows', () => {
     const styles = css()
     expect(styles).toContain('.mafw-process-step-card [data-slot="message-part-title-text"]')
