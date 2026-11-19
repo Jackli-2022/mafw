@@ -2119,6 +2119,54 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     setJumpVisible(false)
   }
 
+  // Async layout growth (markdown, images, tool cards, inbox) does not always
+  // change stored text; while pinned, re-anchor after any mutation/resize so the
+  // scrollbar stays at the very bottom instead of stopping a few dozen px short.
+  const pinNow = () => {
+    const el = containerRef()
+    if (!el || !pinned()) return
+    if (el.scrollHeight - el.scrollTop - el.clientHeight > 1) {
+      el.scrollTop = el.scrollHeight
+      lastScrollTop = el.scrollTop
+    }
+    setJumpVisible(false)
+  }
+  let pinFrame = 0
+  let pinTimer: ReturnType<typeof setTimeout> | null = null
+  const schedulePin = () => {
+    // rAF is the right time when the window is visible; the timer fallback still
+    // runs when Electron throttles rAF for an occluded window.
+    if (!pinFrame) {
+      pinFrame = requestAnimationFrame(() => {
+        pinFrame = 0
+        pinNow()
+      })
+    }
+    if (pinTimer === null) {
+      pinTimer = setTimeout(() => {
+        pinTimer = null
+        pinNow()
+      }, 32)
+    }
+  }
+  createEffect(() => {
+    const el = containerRef()
+    if (!el) return
+    const mo = new MutationObserver(schedulePin)
+    const ro = new ResizeObserver(schedulePin)
+    mo.observe(el, { childList: true, subtree: true, characterData: true })
+    ro.observe(el)
+    schedulePin()
+    onCleanup(() => {
+      mo.disconnect()
+      ro.disconnect()
+    })
+  })
+  onCleanup(() => {
+    if (pinFrame) cancelAnimationFrame(pinFrame)
+    if (pinTimer !== null) clearTimeout(pinTimer)
+  })
+
   // Smart sticky scroll: follow the bottom only while pinned; a released pin
   // leaves the viewport alone during streaming (jump pill signals new content).
   createEffect(() => {
@@ -2142,10 +2190,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     }
   })
 
-  // Focus switch anchors the pane to the bottom (show latest).
-  createEffect(() => {
-    if (props.focused) forceAnchor()
-  })
+  // Focus switch / session switch anchors the pane to the bottom (show latest).
+  createEffect(on(
+    () => [props.focused, sidProp()] as const,
+    ([focused]) => { if (focused) forceAnchor() },
+  ))
 
   // A new pending flow card scrolls into view only when pinned to the bottom;
   // otherwise the jump pill signals pending answers.

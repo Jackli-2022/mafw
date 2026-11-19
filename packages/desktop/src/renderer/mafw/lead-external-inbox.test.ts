@@ -83,6 +83,30 @@ describe('buildLeadExternalInbox', () => {
     expect(items).toEqual([]);
   });
 
+  test('ignores system internal threads when the project source list omits them', () => {
+    // System sources live at project_dir='*', so events.sources({projectDir})
+    // never returns them; the projection must still recognize internal.
+    const items = buildLeadExternalInbox({
+      threads: [thread({ id: 'th1', sourceId: 'internal' })],
+      sources: [],
+      subscriptions: { th1: [sub({ id: 's1' })] },
+      deliveries: { th1: [delivery({ subscriptionId: 's1' })] },
+    });
+
+    expect(items).toEqual([]);
+  });
+
+  test('keeps cron deliveries labelled Cron when the system source is not listed', () => {
+    const items = buildLeadExternalInbox({
+      threads: [thread({ id: 'th1', sourceId: 'cron', title: 'nightly' })],
+      sources: [],
+      subscriptions: { th1: [sub({ id: 's1' })] },
+      deliveries: { th1: [delivery({ subscriptionId: 's1' })] },
+    });
+
+    expect(items[0]).toMatchObject({ sourceKind: 'cron', sourceLabel: 'Cron' });
+  });
+
   test('falls back to the external key and a generic source label', () => {
     const items = buildLeadExternalInbox({
       threads: [thread({ id: 'th1', title: '  ', externalKey: 'cron:tick', sourceId: 'src-x' })],

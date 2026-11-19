@@ -54,9 +54,19 @@ const SOURCE_LABELS: Record<string, string> = {
   cron: 'Cron',
   internal: 'Internal',
 };
+// System sources (`internal` / `cron`) are stored at project_dir='*' and never
+// appear in `events.sources({ projectDir })`; their ids are the stable kind.
+const SYSTEM_SOURCE_KINDS: Record<string, string> = {
+  internal: 'internal',
+  cron: 'cron',
+};
 
 export function sourceLabelFor(kind: string): string {
   return SOURCE_LABELS[kind] ?? 'Event';
+}
+
+function sourceKindFor(sourceId: string, byId: Map<string, string>): string {
+  return byId.get(sourceId) ?? SYSTEM_SOURCE_KINDS[sourceId] ?? 'event';
 }
 
 function timestamp(value: string | null): number {
@@ -72,7 +82,7 @@ export function buildLeadExternalInbox(input: LeadExternalInboxInput): LeadExter
   const items: LeadExternalDeliveryItem[] = [];
 
   for (const thread of input.threads) {
-    const kind = sourceKind.get(thread.sourceId) ?? 'event';
+    const kind = sourceKindFor(thread.sourceId, sourceKind);
     // Internal decision/goal threads also reach the Lead, but they are not
     // external deliveries and must not appear in this card.
     if (kind === 'internal') continue;
