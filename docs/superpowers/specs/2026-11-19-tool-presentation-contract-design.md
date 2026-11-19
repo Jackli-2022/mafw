@@ -310,8 +310,11 @@ ToolRegistry.entry(name)                  // 只读快照，调试/测试用
 
 ### Wave 3 · 富卡
 
-- `task/question/skill`：`present()` 产出 `collapsed` 与 `expanded.sections/actions`；task 的 `open-subagent`、question 的 `answer`、skill 的详情保留。
-- 删除 task 的自绘 trigger 与 `task-tool-icon` 分支（如果 `ToolCard` 已覆盖）。
+- `task/question/skill`：`present()` 产出 `collapsed` 与 `expanded.body = "custom"` + `renderBody`（skill 用 `markdown`/`default`）。
+- task：折叠行 = agent 名 + description/child id + `(background)` meta；展开体显示 agent/description/session；`expanded.actions` 用 `open-subagent`（`ToolCard` 新增 `onOpenSession` 与链接渲染）。
+- question：折叠行 = `问题` + 首个问题 + `N 个问题` / `N 已回答`；展开体保留 Q/A 列表，未回答时显示 `未回答`。
+- skill：折叠行 = skill 名（首字母大写）；展开体显示 `output` Markdown；空 output 回退通用输入体。
+- 删除 task 的自绘 trigger 与 `task-tool-icon` / task-tool-* 时间线作用域；`basic-tool.css` 的 task 基线样式留到 Wave 5 清理。
 
 ### Wave 4 · MAFW family
 
