@@ -41,6 +41,7 @@ export function ToolCard(input: ToolCardProps) {
   })
   const output = () => input.props.output ?? ""
   const meta = () => input.presentation.collapsed.meta ?? []
+  const actions = () => input.presentation.expanded.actions ?? []
   const state = () => (open() ? "expanded" : "collapsed")
 
   const defaultRow = () => (
@@ -111,6 +112,19 @@ export function ToolCard(input: ToolCardProps) {
         <Collapsible.Content>
           <div class="mafw-tool-card-body" data-state={state()}>
             {body()}
+            <Show when={actions().length > 0}>
+              <div class="mafw-tool-card-actions" data-component="tool-card-actions">
+                <For each={actions()}>
+                  {(action) =>
+                    action.kind === "link" && action.href ? (
+                      <a class="mafw-tool-card-link" href={action.href} target="_blank" rel="noopener noreferrer">
+                        {action.label ?? action.href}
+                      </a>
+                    ) : null
+                  }
+                </For>
+              </div>
+            </Show>
           </div>
         </Collapsible.Content>
       </Collapsible>

@@ -81,7 +81,7 @@ export interface ToolPresentationContext {
   props: ToolProps
   directory?: string
   mode: "chat" | "context" | "timeline"
-  t: (key: string, params?: Record<string, unknown>) => string
+  t: (key: string, params?: Record<string, string | number | boolean>) => string
   sessionHref?: (sessionID: string) => string | undefined
   agent?: (name?: string) => { name: string; color?: string; v2Color?: string } | undefined
 }

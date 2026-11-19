@@ -19,4 +19,9 @@ describe("ToolCard shell", () => {
     expect(css).toContain("mask-image")
     expect(css).toContain("calc(100% - 8px)")
   })
+
+  test("renders link actions in the expanded body", () => {
+    expect(tsx).toContain("mafw-tool-card-link")
+    expect(tsx).toContain("expanded.actions")
+  })
 })

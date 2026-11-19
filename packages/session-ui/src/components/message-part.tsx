@@ -29,6 +29,8 @@ import { Collapsible } from "@mafw/ui/collapsible"
 import { FileIcon } from "@mafw/ui/file-icon"
 import { Icon } from "@mafw/ui/icon"
 import { ToolErrorCard } from "./tool-error-card"
+import { ToolCard } from "./tool-card"
+import { partOutputText, resolvePresentation, type ToolPresentationContext } from "./tool-presentation"
 import { Checkbox } from "@mafw/ui/checkbox"
 import { DiffChanges } from "@mafw/ui/diff-changes"
 import { Markdown } from "./markdown"
@@ -1657,6 +1659,38 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   const controlledOpen = () => (props.onToolOpenChange ? (props.toolOpen ?? props.defaultOpen) : undefined)
   const handleToolOpenChange = (open: boolean) => props.onToolOpenChange?.(open)
 
+  const toolName = () => TOOL_NAME_ALIASES[part().tool] ?? part().tool
+  const entry = createMemo(() => ToolRegistry.entry(toolName()))
+  const toolProps = (): ToolProps => ({
+    input: input(),
+    tool: toolName(),
+    sessionID: part().sessionID,
+    metadata: partMetadata(),
+    output: partOutputText(part().state),
+    status: part().state.status,
+    error: errorText(part().state.error),
+    hideDetails: props.hideDetails,
+    defaultOpen: props.defaultOpen,
+    open: controlledOpen(),
+    onOpenChange: props.onToolOpenChange ? handleToolOpenChange : undefined,
+    deferContent: props.deferToolContent,
+    virtualizeDiff: props.virtualizeDiff,
+    onContentRendered: props.onContentRendered,
+  })
+  const context = (): ToolPresentationContext => ({
+    props: toolProps(),
+    directory: data.directory,
+    mode: "chat",
+    t: (key, params) => i18n.t(key, params),
+    sessionHref: data.sessionHref,
+  })
+  const presentation = createMemo(() => {
+    const current = entry()
+    if (!current?.present) return undefined
+    const ctx = context()
+    return resolvePresentation(current.present(ctx), ctx)
+  })
+
   return (
     <Show when={!hideQuestion()}>
       <div data-component="tool-part-wrapper" data-timeline-part-id={part().id}>
@@ -1689,6 +1723,19 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               )
             }}
           </Match>
+          <Match when={presentation()}>
+            {(resolved) => (
+              <ToolCard
+                props={toolProps()}
+                presentation={resolved()}
+                open={controlledOpen()}
+                defaultOpen={props.defaultOpen}
+                onOpenChange={props.onToolOpenChange ? handleToolOpenChange : undefined}
+                renderCollapsed={entry()?.renderCollapsed}
+                renderBody={entry()?.renderBody}
+              />
+            )}
+          </Match>
           <Match when={true}>
             <Dynamic
               component={render()}
@@ -1696,7 +1743,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               tool={TOOL_NAME_ALIASES[part().tool] ?? part().tool}
               sessionID={part().sessionID}
               metadata={partMetadata()}
-              output={part().state.output}
+              output={partOutputText(part().state)}
               status={part().state.status}
               error={errorText(part().state.error)}
               hideDetails={props.hideDetails}

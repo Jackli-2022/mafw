@@ -79,6 +79,20 @@
   font-size: 10.5px;
   color: var(--text-weaker);
 }
+.mafw-tool-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+.mafw-tool-card-link {
+  font-size: 10.5px;
+  color: var(--text-interactive-base);
+  text-decoration: none;
+}
+.mafw-tool-card-link:hover {
+  text-decoration: underline;
+}
 .mafw-tool-card[data-status="error"] .mafw-tool-card-title {
   color: var(--danger-text);
 }

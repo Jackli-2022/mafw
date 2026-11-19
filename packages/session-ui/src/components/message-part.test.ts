@@ -14,6 +14,17 @@ describe("read tool card", () => {
   })
 })
 
+describe("ToolPartDisplay presentation wiring", () => {
+  test("passes normalized history output and uses the shared ToolCard", () => {
+    expect(componentSource).toContain("partOutputText(part().state)")
+    expect(componentSource).toContain("<ToolCard")
+  })
+
+  test("does not pass raw state.output only", () => {
+    expect(componentSource).not.toContain("output={part().state.output}")
+  })
+})
+
 describe("readPartText", () => {
   test("returns empty string when accum is undefined and part text is undefined", () => {
     expect(readPartText(undefined, { id: "part_1" })).toBe("")
