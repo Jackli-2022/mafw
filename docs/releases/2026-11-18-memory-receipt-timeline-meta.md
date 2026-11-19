@@ -88,6 +88,8 @@
 - 真机：打开 CodeMode 段实测 `Code Mode 执行` 标题 **11px/550**、object **10.5px**、`1 次调用`、1 个子调用行、最终输出存在、子结果卡 **0**；Shell 行同字号，页面无 `.mafw-turn-render-error`。
 - 评审修复（`c3c3d67f2`）：`shouldUsePresentation` 让插件 override 真正优先；未知 MCP 工具走 `genericPresentation` + `ToolCard`；context 组改为 `ToolCard group`；`renderBody` 用 `Dynamic` 挂载、CodeMode 子调用改 `Index` 保留行状态；补 `resolveToolEntry` canonical 链、bash ANSI 清理、webfetch 折叠链接、websearch 链接体、`partOutputText` 空 output 回退；移除未实现的 `animated`/`defer` 字段。
 - 修复后门禁：Session UI **35 suites / 193 pass / 0 fail**；Desktop **797 suites / 4164 pass / 0 fail**；两侧 `tsgo` rc 0；`electron-vite build` 通过。
+- `2d761a572`：段头 `已思考 N 秒` 改为 **12px / 400**（比工具名大一档、不加粗）；`processSummary` 同时读取 reasoning 的 `time.created/completed`，历史段不再丢时长；只有最后一段在完全无时间时回退整轮时长，前面段不重复。
+- 段头门禁：Session UI **36 suites / 196 pass / 0 fail**；Desktop **797 suites / 4164 pass / 0 fail**；两侧 `tsgo` rc 0；`electron-vite build` 通过。
 - 提交：`638c97e8d`（契约）、`f931f2734`（registry）、`8747e565a`（ToolCard）、`495aa6664`（行工具）、`133f85bc7`（ToolPartDisplay）、`04532270a`（context 组）、`8d9d31689`（plugin override）、`e67a71f4a`（ChatView 11px）、`8f29e679e`（CodeMode 卡）。
 
 ## 已知问题 / 后续
