@@ -99,9 +99,10 @@
 - Wave 2 真机：`Write` 卡折叠行 `state=collapsed`、标题 11px/550、object 10.5px、行高 28px、`+174`，`closest("[data-file-path]")` 命中 wrapper；展开后 diff 文件头 11px/550、目录 10.5px，首个内容元素（文件图标）与标题左边缘差 0.8px；页面无 `.mafw-turn-render-error`。
 - Wave 2 提交：`96a4a8e5e`（model+presenter）、`9fca8a63f`（bodies）、`c55f92a3b`（wiring）、`ab3d1229b`（density）、`ba1c5a479`（edge alignment）、`b9bc8e33d`（conformance + desktop wiring test）、`dba65abec`（collapsed row file path）、`61d1a6ec1`（renderable patch rows）、`07f324e39`（deleted seed + Windows dirs）、`12a79fe13`（plugin presenter fallback）。
 - Wave 3（富卡）：`task/question/skill` 接 `presentTask` / `presentQuestion` / `presentSkill`；task 折叠行显示 agent + description + `(background)`，`TaskBody` 显示 agent/description/session，`open-subagent` 动作经 `ToolCard.onOpenSession` 导航；question 显示首个问题 + 已回答/问题数，`QuestionBody` 保留 Q/A 列表（未回答显示占位）；skill 从 `input.name` / `input.skill` / `output` 的 `# Skill: <name>` 推导名称，展开体显示 Markdown。删除 task 自绘 trigger、`task-tool-icon` 分支与时间线 task-tool CSS。
-- Wave 3 门禁：Session UI **46 suites / 227 pass / 0 fail**；Desktop **799 suites / 4172 pass / 0 fail**；两侧 `tsgo` rc 0；`electron-vite build` 通过。
+- Wave 3 评审修复：`ToolPresentationFallback` 补 `onOpenSession`（插件覆盖的 task 仍有子会话导航）；新增 `task-tool-model.ts` 的 `taskSessionForParent`，用 part 的 `sessionID` 而不是路由 pathname 解析子会话（桌面 MemoryRouter 下历史 task 的旧解析实际失效）；task 无 agent 时动作标签不再拼成 `Agent Agent`；`ToolCard` 拒绝 `//` 协议相对 href、只拦截普通左键、隐藏全空的动作容器；question 零问题时回退到 `未回答`。
+- Wave 3 门禁：Session UI **47 suites / 235 pass / 0 fail**（Wave 2 基线 42/216，本轮 +5 suites / +19 tests）；Desktop **798 suites / 4172 pass / 0 fail**；两侧 `tsgo` rc 0；`electron-vite build` 通过。
 - Wave 3 真机：`task` 卡折叠行标题 `General`、object `实现召回分段计时`、11px/550、28px；展开体 `task-detail` + `General Agent` 动作；`skill` 卡标题 `Writing-plans`、11px/550、28px，展开体 Markdown 正常；页面无 `.mafw-turn-render-error`。question 卡当前会话无实例，由 presenter/body 单测覆盖。
-- Wave 3 提交：`5aac72edd`（presenters）、`42213d271`（bodies + session action）、`c09ba0f25`（wiring）、`736c84a6b`（timeline task CSS）、`a1bb666d9`（skill name from output header）。
+- Wave 3 提交：`5aac72edd`（presenters）、`42213d271`（bodies + session action）、`c09ba0f25`（wiring）、`736c84a6b`（timeline task CSS）、`a1bb666d9`（skill name from output header）、`87bc47305`（conformance）、`396c1489b`（task navigation + action hardening）。
 
 ## 已知问题 / 后续
 
