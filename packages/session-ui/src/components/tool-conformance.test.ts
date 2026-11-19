@@ -1,4 +1,6 @@
+import * as fs from "node:fs"
 import { describe, expect, test } from "bun:test"
+import { HIDDEN_TOOLS, TOOL_NAME_ALIASES } from "./parts-rules"
 import {
   PRESENTED_DIFF_TOOLS,
   PRESENTED_RICH_TOOLS,
@@ -88,5 +90,23 @@ describe("rich presenter conformance", () => {
       expect(out.collapsed.status).toBeTruthy()
       expect(out.expanded.body ?? out.expanded.sections).toBeTruthy()
     }
+  })
+})
+
+describe("first-party registration conformance", () => {
+  const componentSource = fs.readFileSync(new URL("./message-part.tsx", import.meta.url), "utf-8")
+
+  test("every non-hidden registration has a presenter", () => {
+    const chunks = componentSource.split("ToolRegistry.register({").slice(1)
+    const names = new Set<string>()
+    for (const chunk of chunks) {
+      const name = chunk.match(/^\s*name: "([^"]+)"/)?.[1]
+      if (!name) continue
+      names.add(name)
+      if (HIDDEN_TOOLS.has(name)) continue
+      expect(chunk).toContain("present:")
+    }
+    expect(names.size).toBeGreaterThanOrEqual(13)
+    for (const target of Object.values(TOOL_NAME_ALIASES)) expect(names.has(target)).toBe(true)
   })
 })
