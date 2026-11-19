@@ -11,8 +11,9 @@
     "package.json"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "test": "node --test \"src/**/*.test.ts\""
+    "build": "tsc -p tsconfig.json && node -e \"require('fs').writeFileSync('dist/package.json', JSON.stringify({ type: 'commonjs' }))\"",
+    "test": "node --test \"src/**/*.test.ts\"",
+    "test:e2e": "node scripts/e2e-gateway.cjs"
   },
   "dependencies": {
     "ws": "^8.21.3"
