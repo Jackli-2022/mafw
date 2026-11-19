@@ -1476,16 +1476,44 @@ export interface ToolProps {
 
 export type ToolComponent = Component<ToolProps>
 
+/**
+ * Card for a presenter-only registry entry (no legacy `render`). Plugin
+ * proxies use it as their fail-open fallback so an overridden diff/rich card
+ * degrades to its real presentation instead of GenericTool raw JSON.
+ */
+export function ToolPresentationFallback(props: ToolProps & { entry: ToolRegistryEntry }) {
+  const data = useData()
+  const i18n = useI18n()
+  const context = (): ToolPresentationContext => ({
+    props,
+    directory: data.directory,
+    mode: "chat",
+    t: (key, params) => i18n.t(key, params),
+    sessionHref: data.sessionHref,
+  })
+  const presentation = createMemo(() => resolvePresentation(props.entry.present?.(context()), context()))
+  return (
+    <ToolCard
+      props={props}
+      presentation={presentation()}
+      defaultOpen={props.defaultOpen}
+      renderCollapsed={props.entry.renderCollapsed}
+      renderBody={props.entry.renderBody}
+    />
+  )
+}
+
 // 工具卡注册表与 canonical 解析层已迁至轻依赖模块（bun test 可直接导入）；
 // 此处转发保持既有导入方（desktop tool-cards 等）零改动。
 export { registerTool, getTool, ToolRegistry } from "./tool-registry"
 export { resolveToolRender, CLASS_FAMILY, readPathInput, TOOL_NAME_ALIASES } from "./tool-canonical"
-import { ToolRegistry, shouldUsePresentation } from "./tool-registry"
+import { ToolRegistry, shouldUsePresentation, type ToolRegistryEntry } from "./tool-registry"
 import { resolveToolRender, resolveToolEntry, readPathInput, TOOL_NAME_ALIASES } from "./tool-canonical"
 import { isTaskPart } from "./tool-canonical"
 import { shouldRenderToolError } from "./tool-render-routing"
 import { genericPresentation, presentDiffTool, presentRowTool } from "./tool-presenters"
 import { ApplyPatchBody, EditBody, WriteBody } from "./diff-tool-card"
+import { canonicalMetadataFiles } from "./diff-tool-model"
 import { displayToolOf } from "./parts-rules"
 
 PART_MAPPING["tool"] = function ToolPartDisplay(props) {
@@ -1502,6 +1530,12 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
 
   const input = () => readInput(part().state.input)
   const partMetadata = () => part().state.metadata ?? emptyMetadata
+  const diffFilePath = createMemo(() => {
+    const current = part()
+    const tool = displayToolOf(current)
+    if (tool !== "edit" && tool !== "write" && tool !== "apply_patch" && part().toolClass !== "file-edit") return undefined
+    return readPathInput(input()) ?? canonicalMetadataFiles(partMetadata())[0]?.file
+  })
   const taskChildID = createMemo(() => {
     if (!isTaskPart(part())) return
     return partMetadata().sessionID as string | undefined
@@ -1560,7 +1594,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
 
   return (
     <Show when={!hideQuestion()}>
-      <div data-component="tool-part-wrapper" data-timeline-part-id={part().id}>
+      <div data-component="tool-part-wrapper" data-timeline-part-id={part().id} data-file-path={diffFilePath()}>
         <Switch>
           <Match when={shouldRenderToolError(part())}>
             {(_matched) => {

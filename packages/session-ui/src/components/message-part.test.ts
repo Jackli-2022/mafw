@@ -58,6 +58,11 @@ describe("diff tools use the shared presentation path", () => {
       expect(block(name, next)).not.toContain("handlesError")
     }
   })
+
+  test("keeps a file path on the always-rendered tool wrapper", () => {
+    expect(componentSource).toMatch(/data-component="tool-part-wrapper"[\s\S]{0,160}data-file-path=/)
+    expect(componentSource).toContain('part().toolClass !== "file-edit"')
+  })
 })
 
 describe("readPartText", () => {
