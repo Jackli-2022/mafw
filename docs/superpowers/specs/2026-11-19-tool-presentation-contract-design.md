@@ -303,8 +303,10 @@ ToolRegistry.entry(name)                  // 只读快照，调试/测试用
 
 ### Wave 2 · diff
 
-- `edit/write/apply_patch`：`present()` 产出 `collapsed`（标题/路径/status/meta ±）与 `expanded.body = "diff"`；body 继续用现有组件。
-- 验证 `deferContent`、`virtualizeDiff`、`ToolFileAccordion` 不被破坏。
+- `edit/write/apply_patch`：`present()` 产出 `collapsed`（标题/路径/status/meta ±）与 `expanded.body = "custom"` + `renderBody`；body 拆成 `EditBody` / `WriteBody` / `ApplyPatchBody`（`diff-tool-card.tsx`），继续用现有 `ToolFileAccordion` / `DiffChanges` / `DiagnosticsDisplay`。
+- 折叠行：`edit` 用相对路径 + 单文件增删；`apply_patch` 单文件用路径、多文件用 `N 个文件` + 总增删；`write` 无 metadata 时按 `input.content` 行数给 `+N`；0/0 不显示 meta。
+- 普通聊天与时间线都走 `ToolCard`（11px/550），删除 `.mafw-process-step-card` 里的 edit 专用字号；diff body 头由 `tool-card.css` 统一。
+- 验证 `deferContent`、`virtualizeDiff`、`ToolFileAccordion`、sticky accordion 不被破坏。
 
 ### Wave 3 · 富卡
 

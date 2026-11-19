@@ -93,6 +93,10 @@
 - `be294bd81`：所有工具卡运行时默认 **collapsed**；移除 CodeMode / question / MAFW 自绘卡的默认展开，`ToolCard` 只认调用方显式 `defaultOpen`（详情模式仍可展开 shell/edit）。
 - 折叠门禁：Session UI **36 suites / 197 pass / 0 fail**；Desktop **797 suites / 4164 pass / 0 fail**；两侧 `tsgo` rc 0；`electron-vite build` 通过。
 - 提交：`638c97e8d`（契约）、`f931f2734`（registry）、`8747e565a`（ToolCard）、`495aa6664`（行工具）、`133f85bc7`（ToolPartDisplay）、`04532270a`（context 组）、`8d9d31689`（plugin override）、`e67a71f4a`（ChatView 11px）、`8f29e679e`（CodeMode 卡）。
+- Wave 2（diff 卡）：`edit/write/apply_patch` 接 `presentDiffTool` + `renderBody`；折叠行显示相对路径 / `N 个文件` 与 `+N -M`（0/0 不显示），展开体保留 `ToolFileAccordion` / `DiffChanges` / `DiagnosticsDisplay` 与 `virtualizeDiff`；不再包 `BasicTool`。diff body 文件名统一 11px/550、目录 10.5px，正文与折叠标题同边（6px，内层 button 不再叠加 padding）。
+- Wave 2 门禁：Session UI **41 suites / 211 pass / 0 fail**；Desktop **798 suites / 4169 pass / 0 fail**；两侧 `tsgo` rc 0；`electron-vite build` 通过。
+- Wave 2 真机：`Write` 卡折叠行 `state=collapsed`、标题 11px/550、object 10.5px、行高 28px、`+174`；展开后 diff 文件头 11px/550，首个内容元素（文件图标）与标题左边缘差 0.8px；页面无 `.mafw-turn-render-error`。
+- Wave 2 提交：`96a4a8e5e`（model+presenter）、`9fca8a63f`（bodies）、`c55f92a3b`（wiring）、`ab3d1229b`（density）、`ba1c5a479`（edge alignment）、`b9bc8e33d`（conformance + desktop wiring test）。
 
 ## 已知问题 / 后续
 
