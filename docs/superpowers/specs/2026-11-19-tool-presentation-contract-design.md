@@ -223,7 +223,7 @@ ToolRegistry.entry(name)                  // 只读快照，调试/测试用
 ### 4.1 状态与尺寸（本稿的调用）
 
 - 不再有“普通聊天 vs 时间线”两套：涉及 ChatView 的三条路径（过程时间线、`AssistantParts`、context 组）都用同一个 `ToolCard`，只有 `open` 一个状态开关。
-- 字号只保留**一套**（待定，见 §8）：整个 ChatView 的折叠行同字号、同路径字号、同 chevron。
+- 字号**统一为 11px / 550**（折叠行标题），目标/路径 **10.5px**，meta/args **10.5px**；整个 ChatView 共用同一套 token，不再按位置覆盖。
 - `collapsed` / `expanded` 由工具显式声明；缺省走 `defaultCollapsed` / `DEFAULT_EXPANDED`，不做“按信息量猜”。
 - `object` 统一用相对路径（`DataProvider.directory`）；context 组用文件名（`mode: "context"`），命令/query 原样，URL 原样。
 - 图标默认不渲染；`icon` 只留给未来可选的家族标识，不在本阶段使用。
@@ -292,20 +292,17 @@ ToolRegistry.entry(name)                  // 只读快照，调试/测试用
 
 **本稿的调用（可按需推翻）**
 
-1. 整个 ChatView 用同一套 `ToolCard` 与同一套字号；不再有“普通聊天 / 时间线”两套。
+1. 整个 ChatView 用同一套 `ToolCard` 与同一套字号：**11px / 550** 标题、10.5px 目标/路径；不再有“普通聊天 / 时间线”两套。
 2. 每个工具显式声明 `collapsed` / `expanded`；缺省由 `defaultCollapsed` / `DEFAULT_EXPANDED` 合并，默认展开体是通用输入/输出。
-3. `Section` / `ListItem` / `ToolBadge` 迁到 session-ui，desktop `extract.ts` re-export；`ToolCardSpec` 仍是 desktop 侧的适配层。
-4. 富卡 sections 与 `mafw-tool-*` CSS 留在 desktop，通过 `renderSections` 注入；不把 30 个卡片的排版搬进 session-ui。
-5. context 组（Wave 1b）在范围内；否则 `getToolInfo` 无法真正删除。
-6. 插件卡继续用 `render` + `override`，不要求迁移到 `present`。
-7. 不加 `localStorage` 回退开关；legacy `render` 就是逃生口。
+3. `ToolCard` 根节点用 `data-state="collapsed" | "expanded"`；CSS 只按两个状态写，默认 `collapsed`。
+4. `Section` / `ListItem` / `ToolBadge` 迁到 session-ui，desktop `extract.ts` re-export；`ToolCardSpec` 仍是 desktop 侧的适配层。
+5. 富卡 sections 与 `mafw-tool-*` CSS 留在 desktop，通过 `renderSections` 注入；不把 30 个卡片的排版搬进 session-ui。
+6. context 组（Wave 1b）在范围内；否则 `getToolInfo` 无法真正删除。
+7. 插件卡继续用 `render` + `override`，不要求迁移到 `present`。
+8. 不加 `localStorage` 回退开关；legacy `render` 就是逃生口。
 
 **待决（需要你拍板）**
 
-1. 统一后的折叠行字号以哪一档为准？
-   - A. 11px / 550（现在过程抽屉的密度）
-   - B. 14px（现在 `AssistantParts` 工具卡的密度）
-   - C. 其他（给一个数值）
-2. 先只做 Wave 1 + 1b（契约 + 行工具 + context 组），还是一次性排完 Wave 1–5？前者能最快验证契约，后者改动面大。
+1. 先只做 Wave 1 + 1b（契约 + 行工具 + context 组），还是一次性排完 Wave 1–5？前者能最快验证契约，后者改动面大。
 
 
