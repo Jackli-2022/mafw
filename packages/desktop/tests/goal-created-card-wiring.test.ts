@@ -20,7 +20,7 @@ test("mafw_create_goal is registered with the actionable card", () => {
 test("only a completed tech_lead result gets the card", () => {
   assert.match(model, /status !== "completed"/)
   assert.match(model, /routedTo !== "tech_lead"/)
-  assert.match(card, /fallback=\{<FallbackTool \{\.\.\.props\} \/>\}/)
+  assert.match(card, /FamilyCard spec=\{TOOL_SPECS\.mafw_create_goal\} \{\.\.\.props\}/)
 })
 
 test("the shell owns Goal navigation and cancellation", () => {
