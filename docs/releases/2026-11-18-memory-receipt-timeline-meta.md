@@ -112,6 +112,7 @@
 - Wave 5 门禁：Session UI **49 suites / 242 pass / 0 fail**；Desktop **803 suites / 4191 pass / 0 fail**；两侧 `tsgo` rc 0；`electron-vite build` 通过。本轮新增 Session UI **2 suites / 5 tests**、Desktop **1 test**；Desktop 总数同时包含并发工作新增用例。
 - Wave 5 真机：重载后工具卡正常折叠/展开，页面无 `.mafw-turn-render-error`；本波无视觉改动，作为回归守卫。
 - Wave 5 提交：`6cb235c79`（getToolInfo removal）、`f16ebba0f`（registry occupancy）、`ed67711fc`（registration conformance）、`cffda77af`（defaultOpen + comment cleanup）、`0e67fbeed`（task agent assertion move）、`87100cf58`（cleanup/conformance hardening）。
+- Wave 5 后续修复（`7160dac25`）：`ThinkingRow` 与工具卡对齐——trigger 28px / `padding: 0 6px`，正文改用 `padding-left: var(--mafw-tool-content-left, 6px)`，删除旧的 7px margin + 12px padding + 左边线；`ToolCard` trigger 自带 6px padding，不再依赖 `mafw.css` 的 `tool-part-wrapper` 旧规则。真机实测：思考 label / Shell title 均 296px，思考正文 / Shell 正文均 296px，两侧 trigger 均 28px。门禁：Session UI **49 suites / 245 pass / 0 fail**；Desktop **803 suites / 4233 pass / 0 fail**；两侧 `tsgo` rc 0；`electron-vite build` 通过。新增 Session UI **3 tests**（process-timeline 2 + tool-card 1）；Desktop 总数包含并发工作新增用例。
 
 ## 已知问题 / 后续
 
