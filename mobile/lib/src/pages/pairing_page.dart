@@ -9,6 +9,7 @@ import '../config/connection_config.dart';
 import '../config/device_identity.dart';
 import '../config/pairing_flow.dart';
 import '../config/pairing_link.dart';
+import '../network/gateway_transport.dart';
 import '../services/background_credentials.dart';
 import '../services/mdns_discovery.dart';
 import '../services/secure_config_store.dart';
@@ -118,7 +119,13 @@ class _PairingPageState extends State<PairingPage> {
       if (result.ok) {
         _processing = true;
         final link = result.link!;
-        _verifyAndConnect(link.url, link.token, link.nonce);
+        _verifyAndConnect(
+        link.url,
+        link.token,
+        link.nonce,
+        relayUrl: link.relayUrl,
+        fingerprint: link.fingerprint,
+      );
         return;
       }
       if (result.isExpired) {
@@ -129,7 +136,69 @@ class _PairingPageState extends State<PairingPage> {
     }
   }
 
-  Future<void> _verifyAndConnect(String url, String token, String nonce) async {
+  Future<PairingResult> _redeemPairing({
+    required String url,
+    required String token,
+    required String nonce,
+    required String deviceId,
+    required bool rotate,
+    required String relayUrl,
+    required String fingerprint,
+  }) async {
+    try {
+      return await redeemPairing(
+        baseUrl: url,
+        linkToken: token,
+        nonce: nonce,
+        client: _http,
+        deviceId: deviceId,
+        platform: _platformName(),
+        deviceName: _deviceName(),
+        rotate: rotate,
+        relayUrl: relayUrl,
+        fingerprint: fingerprint,
+      );
+    } on PairingException {
+      // The gateway answered: the LAN route is live, do not retry elsewhere.
+      rethrow;
+    } catch (_) {
+      if (relayUrl.isEmpty || relayUrl == url) rethrow;
+      final relayClient = createGatewayHttpClient(ConnectionConfig(
+        baseUrl: relayUrl,
+        apiToken: '',
+        relayUrl: relayUrl,
+        fingerprint: fingerprint,
+      ));
+      try {
+        final result = await redeemPairing(
+          baseUrl: relayUrl,
+          linkToken: token,
+          nonce: nonce,
+          client: relayClient,
+          deviceId: deviceId,
+          platform: _platformName(),
+          deviceName: _deviceName(),
+          rotate: rotate,
+          relayUrl: relayUrl,
+          fingerprint: fingerprint,
+        );
+        return PairingResult(
+          config: result.config.copyWith(baseUrl: url),
+          deviceId: result.deviceId,
+        );
+      } finally {
+        relayClient.close();
+      }
+    }
+  }
+
+  Future<void> _verifyAndConnect(
+    String url,
+    String token,
+    String nonce, {
+    String relayUrl = '',
+    String fingerprint = '',
+  }) async {
     // App-layer policy (spec §6): public cleartext is rejected. LAN / bare-IP
     // cleartext still connects with a warning. HTTPS is always allowed — that is
     // what the Cloudflare/OpenTunnel remote path uses (no Tailscale required).
@@ -164,15 +233,14 @@ class _PairingPageState extends State<PairingPage> {
         nonce: nonce,
       );
 
-      final result = await redeemPairing(
-        baseUrl: url,
-        linkToken: token,
+      final result = await _redeemPairing(
+        url: url,
+        token: token,
         nonce: nonce,
-        client: _http,
         deviceId: deviceId,
-        platform: _platformName(),
-        deviceName: _deviceName(),
         rotate: rotate,
+        relayUrl: relayUrl,
+        fingerprint: fingerprint,
       );
 
       // Save credentials via SecureConfigStore (token → flutter_secure_storage)
@@ -249,7 +317,13 @@ class _PairingPageState extends State<PairingPage> {
     if (result.ok) {
       setState(() => _processing = true);
       final link = result.link!;
-      _verifyAndConnect(link.url, link.token, link.nonce);
+      _verifyAndConnect(
+        link.url,
+        link.token,
+        link.nonce,
+        relayUrl: link.relayUrl,
+        fingerprint: link.fingerprint,
+      );
       return;
     }
 

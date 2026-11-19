@@ -13,6 +13,7 @@ import '../models/mafw_models.dart';
 import '../models/plan_models.dart';
 import '../models/pod_models.dart';
 import '../services/diagnostics.dart';
+import 'gateway_transport.dart';
 
 class GatewayClient {
   final ConnectionConfig config;
@@ -26,7 +27,7 @@ class GatewayClient {
     http.Client? httpClient,
     this.diagnostics,
     this.requestTimeout = const Duration(seconds: 20),
-  }) : _http = httpClient ?? http.Client();
+  }) : _http = httpClient ?? createGatewayHttpClient(config);
 
   Uri _uri(String path, [Map<String, String>? query]) {
     var u = Uri.parse('${config.normalizedBaseUrl}$path');

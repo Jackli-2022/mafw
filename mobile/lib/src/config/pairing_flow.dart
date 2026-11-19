@@ -102,10 +102,17 @@ Future<PairingResult> redeemPairing({
   String deviceName = 'Orcalore',
   bool rotate = false,
   Duration requestTimeout = kPairingRequestTimeout,
+  String relayUrl = '',
+  String fingerprint = '',
 }) async {
   if (nonce == kManualPairingNonce) {
     return PairingResult(
-      config: ConnectionConfig(baseUrl: baseUrl, apiToken: linkToken),
+      config: ConnectionConfig(
+        baseUrl: baseUrl,
+        apiToken: linkToken,
+        relayUrl: relayUrl,
+        fingerprint: fingerprint,
+      ),
       deviceId: '',
     );
   }
@@ -175,7 +182,12 @@ Future<PairingResult> redeemPairing({
   }
 
   return PairingResult(
-    config: ConnectionConfig(baseUrl: baseUrl, apiToken: token),
+    config: ConnectionConfig(
+      baseUrl: baseUrl,
+      apiToken: token,
+      relayUrl: relayUrl,
+      fingerprint: fingerprint,
+    ),
     deviceId: gatewayDeviceId ?? deviceId,
   );
 }

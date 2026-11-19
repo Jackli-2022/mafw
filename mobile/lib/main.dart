@@ -10,6 +10,7 @@ import 'src/cache/session_cache.dart';
 import 'src/config/connection_config.dart';
 import 'src/models/mafw_models.dart';
 import 'src/network/gateway_client.dart';
+import 'src/network/gateway_transport.dart';
 import 'src/network/ws_client_v2.dart';
 import 'src/pages/chat_page.dart';
 import 'src/pages/connection_settings_page.dart';
@@ -160,6 +161,7 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
   }
 
   Future<void> _applyConfig(ConnectionConfig cfg) async {
+    cfg = await resolveActiveConnection(cfg);
     _connectivityWatcher?.dispose();
     _connectivityWatcher = null;
     _lifecycleManager?.dispose();

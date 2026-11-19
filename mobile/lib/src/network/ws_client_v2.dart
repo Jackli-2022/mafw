@@ -18,6 +18,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -25,6 +26,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import '../config/connection_config.dart';
 import '../models/mafw_models.dart';
 import '../services/smart_reconnect.dart';
+import 'gateway_transport.dart';
 import 'ws_client_interface.dart';
 
 class WsClientV2 implements MafwWsClient {
@@ -66,6 +68,8 @@ class WsClientV2 implements MafwWsClient {
   final SmartReconnectManager _reconnectManager = SmartReconnectManager();
 
   WebSocketChannel? _channel;
+  final HttpClient? _customClient;
+  final bool _ownsCustomClient;
   StreamSubscription<dynamic>? _sub;
   Timer? _reconnectTimer;
   bool _disposed = false;
@@ -126,7 +130,10 @@ class WsClientV2 implements MafwWsClient {
     this.deviceId,
     this.onReconnected,
     this.onGatewayReady,
-  });
+    HttpClient? customClient,
+  })  : _customClient = customClient ??
+            (config.usingRelay ? createPinnedHttpClient(config) : null),
+        _ownsCustomClient = customClient == null;
 
   /// Initialize the client, loading persisted reconnection state.
   ///
@@ -149,6 +156,7 @@ class WsClientV2 implements MafwWsClient {
       final channel = IOWebSocketChannel.connect(
         endpointUri,
         headers: upgradeHeaders,
+        customClient: _customClient,
       );
       _channel = channel;
 
@@ -258,6 +266,7 @@ class WsClientV2 implements MafwWsClient {
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     _releaseSocket();
+    if (_ownsCustomClient) _customClient?.close(force: true);
     _events.close();
     _status.close();
     _errors.close();
