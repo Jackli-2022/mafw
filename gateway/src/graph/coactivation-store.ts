@@ -1,10 +1,23 @@
 import { GatewayDatabase } from '../memory/gateway-db';
 import { config } from '../config';
+import {
+  GraphNeighborCache,
+  type CachedNeighbors,
+  type NeighborCacheStats,
+  type NeighborEntry,
+  type PrewarmResult,
+} from './graph-neighbor-cache';
 
 export interface CoactivationUnitInput {
   id: string;
   source_session_id?: string;
   created_at?: string;
+}
+
+interface CoactivationEdgePayload {
+  weight: number;
+  /** Raw `updated_at`; decay is applied at read time, never baked in. */
+  updatedAt: number | null;
 }
 
 const DAY = 86400;
@@ -15,16 +28,51 @@ const DAY = 86400;
  * weighted edge. Complements AnchorGraphStore (shared cue_anchors = lexical
  * association) with behavioural association (Hebbian co-activation).
  * Edge weights decay at read time; re-activation refreshes updated_at.
+ *
+ * Reads are served from a bounded per-node LRU of edge rows (see
+ * `graph-neighbor-cache.ts`). Entries keep the raw weight + updated_at, so
+ * decay stays read-time, and they are dropped by `upsertUnit` / `removeUnit` /
+ * `clear` plus invalidated whenever any write moves the connection's change
+ * counters.
  */
 export class CoactivationGraphStore {
   private db: GatewayDatabase;
+  private neighborCache: GraphNeighborCache<CoactivationEdgePayload>;
+  private loadNodeAStmt: any = null;
+  private loadNodeBStmt: any = null;
 
   constructor(db: GatewayDatabase) {
     this.db = db;
+    this.neighborCache = new GraphNeighborCache<CoactivationEdgePayload>(
+      'coactivation',
+      (db as any).db,
+      nodeId => this.loadNodeEdges(nodeId),
+    );
   }
 
   private get rawDb(): any {
     return (this.db as any).db;
+  }
+
+  /** One node's edge rows — the same set the SQL read path would fetch for it,
+   *  split by edge direction and kept in `rowid` order. */
+  private loadNodeEdges(nodeId: string): CachedNeighbors<CoactivationEdgePayload> {
+    if (!this.loadNodeAStmt) {
+      this.loadNodeAStmt = this.rawDb.prepare(
+        'SELECT unit_b AS nb, weight, updated_at FROM coactivation_edges WHERE unit_a = ? ORDER BY rowid',
+      );
+      this.loadNodeBStmt = this.rawDb.prepare(
+        'SELECT unit_a AS nb, weight, updated_at FROM coactivation_edges WHERE unit_b = ? ORDER BY rowid',
+      );
+    }
+    const toEntry = (row: { nb: string; weight: number; updated_at: number | null }): NeighborEntry<CoactivationEdgePayload> => ({
+      id: row.nb,
+      payload: { weight: row.weight, updatedAt: row.updated_at },
+    });
+    return {
+      unitA: (this.loadNodeAStmt.all(nodeId) as any[]).map(toEntry),
+      unitB: (this.loadNodeBStmt.all(nodeId) as any[]).map(toEntry),
+    };
   }
 
   private nowSec(): number {
@@ -41,15 +89,18 @@ export class CoactivationGraphStore {
     return a < b ? [a, b] : [b, a];
   }
 
-  private decay(weight: number, updatedAt: number): number {
+  private decay(weight: number, updatedAt: number | null): number {
     const halfLifeSec = config.search.graph.coactivation.halfLifeDays * DAY;
     if (halfLifeSec <= 0) return weight;
-    return weight * Math.exp(-Math.max(0, this.nowSec() - updatedAt) / halfLifeSec);
+    // `null` coerces to 0 exactly like the SQL path's arithmetic on an absent
+    // updated_at (→ maximal decay), so mirror and SQL stay bit-identical.
+    return weight * Math.exp(-Math.max(0, this.nowSec() - (updatedAt ?? 0)) / halfLifeSec);
   }
 
   upsertUnit(unit: CoactivationUnitInput): void {
     const id = unit.id;
     if (!id) return;
+    this.neighborCache.invalidate(id);
     const createdSec = this.toSec(unit.created_at);
 
     let goalId: string | null = null;
@@ -141,6 +192,7 @@ export class CoactivationGraphStore {
   removeUnit(unitId: string): void {
     this.rawDb.prepare('DELETE FROM coactivation_units WHERE unit_id = ?').run(unitId);
     this.rawDb.prepare('DELETE FROM coactivation_edges WHERE unit_a = ? OR unit_b = ?').run(unitId, unitId);
+    this.neighborCache.invalidate(unitId);
   }
 
   rebuild(index: { entries: Array<{ id: string; source_session_id?: string; created_at?: string; superseded_by?: string }> }): void {
@@ -155,6 +207,11 @@ export class CoactivationGraphStore {
     const result = new Map<string, Map<string, number>>();
     for (const unitId of unitIds) result.set(unitId, new Map());
     if (unitIds.length === 0) return result;
+
+    const cached = this.neighborCache.ensure(unitIds);
+    if (cached) {
+      return this.getNeighborsFromCache(cached, result, unitIds, topK, exclude);
+    }
 
     const placeholders = unitIds.map(() => '?').join(',');
     const rows = this.rawDb
@@ -183,6 +240,55 @@ export class CoactivationGraphStore {
     return result;
   }
 
+  /**
+   * Neighbours assembled from cached per-node adjacency. Same filters, same
+   * read-time decay and the same per-seed sort/truncation as the SQL path
+   * above — only the edge lookup changes.
+   */
+  private getNeighborsFromCache(
+    cached: Map<string, CachedNeighbors<CoactivationEdgePayload>>,
+    result: Map<string, Map<string, number>>,
+    unitIds: string[],
+    topK: number,
+    exclude?: Set<string>,
+  ): Map<string, Map<string, number>> {
+    const idSet = new Set(unitIds);
+    const bucketOf = (unitId: string) => result.get(unitId)!;
+    const collect = (bucket: Map<string, number>, entries: NeighborEntry<CoactivationEdgePayload>[]) => {
+      for (const entry of entries) {
+        if (idSet.has(entry.id)) continue;
+        if (exclude?.has(entry.id)) continue;
+        const w = this.decay(entry.payload.weight, entry.payload.updatedAt);
+        if (!bucket.has(entry.id) || bucket.get(entry.id)! < w) bucket.set(entry.id, w);
+      }
+    };
+    for (const unitId of unitIds) {
+      const bucket = bucketOf(unitId);
+      const node = cached.get(unitId)!;
+      collect(bucket, node.unitA);
+      collect(bucket, node.unitB);
+      const sorted = [...bucket.entries()].sort((x, y) => (y[1] - x[1]) || x[0].localeCompare(y[0]));
+      bucket.clear();
+      for (const [nb, w] of sorted.slice(0, topK)) bucket.set(nb, w);
+    }
+    return result;
+  }
+
+  /** Test/invalidation hook: drop every cached adjacency. */
+  clearNeighborCache(): void {
+    this.neighborCache.clear();
+  }
+
+  /** Optional warm-up (boot / background): explicit `{ enabled, loaded, failed }`
+   *  so a disabled cache and an all-failed load are distinguishable. */
+  prewarmNeighbors(ids: string[] = []): PrewarmResult {
+    return this.neighborCache.prewarm(ids);
+  }
+
+  neighborCacheStats(): NeighborCacheStats {
+    return this.neighborCache.stats();
+  }
+
   stats(): { edges: number; session: number; goal: number; time: number } {
     const edges = (this.rawDb.prepare('SELECT COUNT(*) AS c FROM coactivation_edges').get() as { c: number }).c;
     const one = (col: string) =>
@@ -193,5 +299,6 @@ export class CoactivationGraphStore {
   clear(): void {
     this.rawDb.prepare('DELETE FROM coactivation_edges').run();
     this.rawDb.prepare('DELETE FROM coactivation_units').run();
+    this.neighborCache.clear();
   }
 }

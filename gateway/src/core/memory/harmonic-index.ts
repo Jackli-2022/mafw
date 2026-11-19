@@ -862,6 +862,14 @@ export class HarmonicIndexManager {
    * of on every query pass.
    */
   private searchVersion = 0;
+  /**
+   * Read-only view of `searchVersion` for caches that derive from index
+   * content (exact-evidence index). Monotonic: bumped by addEntry /
+   * removeEntry and whenever a searchable text change is detected.
+   */
+  getSearchVersion(): number {
+    return this.searchVersion;
+  }
   /** term → PHYSICAL document indexes into `entries` (see postingsIndex). */
   private postingsCache: { version: number; entriesRef: HarmonicIndexEntry[]; byTerm: Map<string, number[]> } | null = null;
 

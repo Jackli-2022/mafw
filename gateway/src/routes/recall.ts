@@ -27,6 +27,8 @@ import type { InstructionSyncService } from '../core/instructions/instruction-sy
 import type { LeadSessionRegistry } from '../core/manager/lead-session-registry';
 import type { MemoryService } from '../memory/service';
 import type { MemoryReceipt } from '../recall/receipt';
+import { recordRecallRequest, recordRecallStage } from '../recall/recall-metrics';
+import type { RecallSnapshotDecision } from '../recall/recall-metrics';
 import type { RouteRegistry } from './registry';
 
 export interface RecallRouteDeps {
@@ -107,8 +109,13 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
 
   // GET /api/recall/context —boundary recall for memory injection
   registry.attachHandler('recall.context', async (req: IncomingMessage, res: ServerResponse) => {
+    const tStart = Date.now();
+    // Task 1 instrumentation: the real recorder is installed once the cheap
+    // per-turn blocks are built (below), so every exit path — empty query,
+    // served body, error — records exactly one request outcome. Declared here
+    // so the catch path can reach it.
+    let recordRequestOutcome: (() => void) | null = null;
     try {
-      const tStart = Date.now();
       const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
       const query = parsedUrl.searchParams.get('query') || '';
       const sessionID = parsedUrl.searchParams.get('sessionID') || '';
@@ -158,12 +165,34 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
         } catch { /* fail-open */ }
       }
       const tNoteBoard = Date.now() - tNote0;
+      // Task 1 stage/request metrics (in-memory, fail-open). Stage samples
+      // are recorded only where the stage actually runs; `total` comes from
+      // recordRecallRequest (no double counting with recordRecallStage).
+      let snapshotDecision: RecallSnapshotDecision | undefined;
+      let servedRoute: 'snapshot' | 'fallback' = 'fallback';
+      let requestRecorded = false;
+      recordRequestOutcome = () => {
+        if (requestRecorded) return;
+        requestRecorded = true;
+        try {
+          recordRecallRequest({
+            route: servedRoute,
+            snapshotDecision,
+            // The client may have aborted while the server was still building
+            // the block (the plugin gives up at 100ms) — that response was
+            // never seen, so it must not count as visible.
+            clientAborted: Boolean(res.destroyed || req.destroyed),
+            totalMs: Date.now() - tStart,
+          });
+        } catch { /* fail-open: metrics must never affect the recall body */ }
+      };
       if (!query.trim()) {
         const only = [noteBoard, goalSnap].filter(Boolean);
         const { renderTopicRecallHeader } = require('../recall/topic-recall');
         const header = renderTopicRecallHeader(topicState, false);
         res.writeHead(200);
         res.end(JSON.stringify({ pointers: [header, ...only].join('\n\n') }));
+        recordRequestOutcome?.();
         return;
       }
       const { formatRecallContext } = require('../recall/inject-format');
@@ -181,9 +210,11 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
           const { decideSnapshotUse } = require('../recall/recall-snapshot');
           const snap = deps.getGatewayDb().kvGet('recall-snapshot', sessionID) as any;
           const decision = decideSnapshotUse(snap, query, new Date(), snapCfg);
+          snapshotDecision = decision;
           if (decision === 'use' && snap) {
             const snapFok = snap.fokStatus ?? 'inject';
             if (snapFok === 'inject') {
+            servedRoute = 'snapshot';
             snapshotPointers = snap.block;
             snapshotFokStatus = snapFok;
             snapshotMemories = Array.isArray(snap.memories) ? snap.memories : undefined;
@@ -225,6 +256,10 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
             } catch { /* fail-open */ }
             log.info(`[Recall] snapshot served for ${sessionID} (age=${Date.now() - Date.parse(snap.builtAt)}ms, fok=${snap.fokStatus ?? 'inject'})`);
             } else {
+              // Decision said "use" but the snapshot carries no reliable
+              // recall body: the fallback search serves this turn. Record the
+              // FOK reason so the skip rate is attributable.
+              snapshotDecision = 'fok';
               log.info(`[Recall] snapshot skipped (fok=${snapFok}, no reliable recall body) for ${sessionID}`);
             }
           } else if (decision !== 'no-snapshot') {
@@ -267,6 +302,7 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
             denseScores = dense ?? undefined;
           } catch { /* fail-open: BM25 only */ }
         }
+        const tSearchCall = Date.now();
         memories = await searchRecallMemories(
           deps.memoryService()!.harmonicIndex,
           query,
@@ -283,13 +319,16 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
             secondaryGraphExpand: false,
           },
         );
+        recordRecallStage('search', Date.now() - tSearchCall);
         // R5 FOK gate (fail-open): weak evidence is stated, not silently
         // withheld. Only active when config.search.fok.enabled.
+        const tFok = Date.now();
         const fokEval = evaluateRecallFokZone(
           deps.memoryService()!.harmonicIndex,
           query,
           config.search.fok,
         );
+        recordRecallStage('fok', Date.now() - tFok);
         fokStatus = fokEval.zone;
         // Word-level support veto: BM25 indexes CJK as unigrams, so a
         // no-answer query can still dominate top1/mean through scattered
@@ -302,7 +341,9 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
         if (fokEval.evaluated && fokStatus === 'inject') {
           try {
             const { selectLexicallySupportedCandidates } = require('../recall/lexical-support');
+            const tLexical = Date.now();
             const selection = selectLexicallySupportedCandidates(memories, query);
+            recordRecallStage('lexical', Date.now() - tLexical);
             if (selection.applicable && selection.supported.length === 0) {
               fokStatus = 'no-memory';
               log.debug(`[Recall] lexical support veto: no word-level overlap (candidates=${memories.length})`);
@@ -331,13 +372,28 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
             // specificity owner that the BM25 candidate set can prefer; the
             // existing search cap (50) is the bound. Apply still enforces topK=3.
             const evidenceLimit = config.search.maxMemoryResults || 50;
+            const tExact = Date.now();
+            const harmonicIndex = deps.memoryService()!.harmonicIndex;
+            // Warm exact-evidence index: keyed by the live index version, so
+            // writes invalidate it without a per-turn rebuild. Partial mocks /
+            // legacy index implementations without the getter stay on the pure
+            // scan (fail-open, no behavior change).
+            let searchVersion: number | undefined;
+            try {
+              if (typeof harmonicIndex.getSearchVersion === 'function') {
+                searchVersion = harmonicIndex.getSearchVersion();
+              }
+            } catch { searchVersion = undefined; }
+            const evidence = findExactRecallEvidence(
+              harmonicIndex.getIndex().entries,
+              query,
+              evidenceLimit,
+              searchVersion,
+            );
+            recordRecallStage('exact', Date.now() - tExact);
             const exact = applyExactRecallEvidence(
               memories,
-              findExactRecallEvidence(
-                deps.memoryService()!.harmonicIndex.getIndex().entries,
-                query,
-                evidenceLimit,
-              ),
+              evidence,
               fokStatus,
               3,
             );
@@ -364,7 +420,10 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
       // under their anchors. Never re-ranks — presentation only.
       const tNb0 = Date.now();
       let neighbors: Map<string, any[]> | undefined;
-      if (config.search.temporalNeighbors?.presentation && memories.length > 0 && deps.memoryService()) {
+      const neighborsRan = Boolean(
+        config.search.temporalNeighbors?.presentation && memories.length > 0 && deps.memoryService(),
+      );
+      if (neighborsRan) {
         try {
           const nb: Map<string, any[]> = recallNeighbors(
             deps.memoryService()!.harmonicIndex,
@@ -375,9 +434,12 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
         } catch { neighbors = undefined; }
       }
       const tNeighbors = Date.now() - tNb0;
+      if (neighborsRan) recordRecallStage('neighbors', tNeighbors);
+      const tRender0 = Date.now();
       const formatted = snapshotPointers
         ? { pointers: snapshotPointers }
         : formatRecallContext(memories, { status: fokStatus, neighbors });
+      if (!snapshotPointers) recordRecallStage('render', Date.now() - tRender0);
       const { hasRelatedRecallBody, renderTopicRecallHeader } = require('../recall/topic-recall');
       const hasRelated = hasRelatedRecallBody(
         formatted.pointers,
@@ -444,6 +506,7 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
       log.debug(`[Recall] timing session=${sessionID || '-'} search=${snapshotPointers ? 0 : Date.now() - tSearch0}ms noteBoard=${tNoteBoard}ms goal=${tGoal}ms neighbours=${tNeighbors}ms`);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ pointers }));
+      recordRequestOutcome?.();
 
       if (receipt && !res.destroyed) {
         const finalReceipt = receipt;
@@ -467,6 +530,7 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
       }
     } catch (err: any) {
       log.error('[Scheduler] recall/context error:', err.message);
+      recordRequestOutcome?.();
       res.writeHead(200);
       res.end(JSON.stringify({ pointers: null }));
     }

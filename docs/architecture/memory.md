@@ -63,6 +63,8 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约的 `comple
 
 **BM25 倒排 postings 缓存（2026-11-18）**：`bm25RawScored` 不再为每个 query token 扫描全库，而是懒构建 `term → 物理文档下标` postings 并跨 expansion/FOK pass 复用；按物理文档累加和输出，重复 id 也保持旧 df/N 与逐文档评分。缓存由 `searchVersion`、entries 数组引用和文档文本检查共同失效，覆盖 add/remove 与 in-place cue/title 变化；未来若对 entries 原地 splice/sort/reverse 必须同步失效。冻结 40 query 的 id/顺序/分数保持 40/40 一致；live 40 条 AUTO p50/p95 从 307/436ms 降至 134/230ms，质量指标不变。详见 `docs/releases/2026-11-18-bm25-postings-latency.md`。
 
+**实时召回分段计时与确定性缓存（2026-11-19）**：`routes/recall.ts` 新增 `recall-metrics.ts` 的纯内存分段观测（`search/fok/exact/lexical/neighbors/render/total` + `route=snapshot|fallback` + `snapshotDecision` + `clientAborted`），仅用于诊断，不影响召回结果；`findExactRecallEvidence` 在传入 `searchVersion` 时启用内存索引缓存（归一化 cue/title/identifier，按版本与 entries/anchors 引用失效），未传版本保持旧纯函数；`AnchorGraphStore` / `CoactivationGraphStore` 新增有界 per-node LRU 邻接缓存（默认开启，`total_changes()` + `PRAGMA data_version` 失效），冷启动不做整图预载。三项均以逐 id/weight 等价为验收；live 40 条 AUTO p50/p95 约 162/226ms → 130/181ms，质量不变。详见 `docs/releases/2026-11-19-recall-stage-metrics-caches.md`。
+
 ### 压缩
 
 `HarmonicUnitFileStore.write()` 输出 `HarmonicUnit` 并自动：
