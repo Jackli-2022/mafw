@@ -257,8 +257,16 @@ ToolRegistry.entry(name)                  // 只读快照，调试/测试用
 - 展开态仍保留同一行；完整对象在展开体里，不给 `object` 加裸 `title`（AGENTS.md 禁止裸 `title`）。
 - 渐隐区默认 **8px**，紧贴 chevron；不要提前渐隐（20px 会吃掉可读字符）。窄窗下 object 可以继续缩，chevron 不缩。
 
+### 4.3 展开正文与折叠行同一条左边缘
+
+- 展开正文的第一行必须和 `collapsed.title` 同一条左边缘；卡片边框/背景可以从行首开始。
+- 统一 token：`--mafw-tool-content-left: 6px`（等于折叠 trigger 的左右 padding）。
+- diff 卡头默认 `12px` padding 在抽屉内改为 `6px`；bash `bash-pre`、`tool-output`、`mafw-tool-box` 同样用这个 token。
+- 内部组件自己的 gutter（行号、文件图标、缩进代码）不算“退格”；只要求第一个可读字符对齐。
+- 测试：折叠标题 left 与展开正文第一行 left 差 ≤1px。
 
 ## 5. 迁移波次
+
 
 
 严格 TDD：每波先写失败测试，再迁移，再删旧路径。
