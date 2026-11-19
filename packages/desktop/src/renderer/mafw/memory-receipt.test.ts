@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   buildMemoryReceiptView,
   relativeReceiptTime,
-  typeLabel,
+  splitMemoryText,
 } from './memory-receipt'
 
 const NOW = Date.parse('2026-11-18T12:00:00.000Z')
@@ -34,16 +34,6 @@ function dto(over: Record<string, unknown> = {}) {
   } as any
 }
 
-describe('typeLabel', () => {
-  test('maps memory types to plain words', () => {
-    expect(typeLabel('semantic')).toBe('事实')
-    expect(typeLabel('procedural')).toBe('做法')
-    expect(typeLabel('global')).toBe('通用')
-    expect(typeLabel('episodic')).toBe('往事')
-    expect(typeLabel('unknown')).toBe('记忆')
-  })
-})
-
 describe('relativeReceiptTime', () => {
   test('formats minutes, hours, days and dates', () => {
     expect(relativeReceiptTime('2026-11-18T11:59:30.000Z', NOW)).toBe('刚刚')
@@ -55,18 +45,76 @@ describe('relativeReceiptTime', () => {
   })
 })
 
+describe('splitMemoryText', () => {
+  test('splits at a natural Chinese delimiter', () => {
+    expect(splitMemoryText('MAFW 中复用既有代码前必须核对签名与副作用语义：SessionWorktreeManager 会 checkout 主仓'))
+      .toEqual({
+        title: 'MAFW 中复用既有代码前必须核对签名与副作用语义',
+        body: 'SessionWorktreeManager 会 checkout 主仓',
+      })
+    expect(splitMemoryText('MAFW 会话收尾遗留未提交改动会被 checkout 静默丢失，收尾必须立即 commit'))
+      .toEqual({
+        title: 'MAFW 会话收尾遗留未提交改动会被 checkout 静默丢失',
+        body: '收尾必须立即 commit',
+      })
+  })
+
+  test('keeps short text as the title and leaves the body empty', () => {
+    expect(splitMemoryText('参考外部方案先盘点后改')).toEqual({
+      title: '参考外部方案先盘点后改',
+      body: '',
+    })
+    expect(splitMemoryText('Review artifact double-encoding goal failure')).toEqual({
+      title: 'Review artifact double-encoding goal failure',
+      body: '',
+    })
+  })
+
+  test('clips long unpunctuated text into a title plus the rest', () => {
+    const view = splitMemoryText('MAFW 调研报告只存在当日会话输出中即丢失且仅靠记住教训无法阻止复发并且下一轮还会重复同样的错误而且继续在下一次会话里再丢一遍')
+    expect(view.title.endsWith('…')).toBe(true)
+    expect(view.title.length).toBeLessThanOrEqual(47)
+    expect(view.body.length).toBeGreaterThan(0)
+  })
+})
+
 describe('buildMemoryReceiptView', () => {
-  test('builds the pill, groups memories and T1, and exposes the filtered line', () => {
+  test('builds a quiet trigger, separates primary from neighbors, and exposes T1', () => {
     const view = buildMemoryReceiptView(dto(), NOW)
-    expect(view.pill).toBe('想起了 1 件事')
-    expect(view.sub).toBe('1 段摘要')
+    expect(view.pill).toBe('想起 1 件旧事')
+    expect(view.header).toBe('想起的 1 件旧事')
+    expect(view.latestLabel).toBe('2 天前')
     expect(view.statusCopy).toBe('')
-    expect(view.memories).toHaveLength(2)
-    expect(view.memories[0]).toMatchObject({ label: '事实', text: '用户偏好 TDD 先行', neighbor: false })
-    expect(view.memories[1]).toMatchObject({ label: '做法', neighbor: true })
+    expect(view.primary).toHaveLength(1)
+    expect(view.primary[0]).toMatchObject({ title: '用户偏好 TDD 先行', body: '', meta: '2 天前' })
+    expect(view.neighbors).toHaveLength(1)
+    expect(view.neighbors[0].title).toBe('合入后先核验')
+    expect(view.neighborLabel).toBe('还有 1 条顺带想起')
     expect(view.t1).toHaveLength(1)
     expect(view.t1[0].excerpt).toBe('元信息怎么展示')
     expect(view.filteredLine).toBe('已过滤 2 段工具 / 子代理输出')
+  })
+
+  test('pill and card header count only primary memories, never neighbors', () => {
+    const primary = Array.from({ length: 3 }, (_, i) => ({
+      id: `mem_p${i}`, type: 'semantic', abstraction: `主记忆 ${i}`,
+      date: '2026-11-16T00:00:00.000Z', available: true,
+    }))
+    const neighbors = Array.from({ length: 4 }, (_, i) => ({
+      id: `mem_n${i}`, type: 'semantic', abstraction: `邻居 ${i}`,
+      date: '2026-11-10T00:00:00.000Z', available: true, neighborOf: 'mem_p0',
+    }))
+    const view = buildMemoryReceiptView(dto({
+      memories: [...primary, ...neighbors],
+      t1: [],
+      filteredT1: 0,
+      counts: { memories: 3, t1: 0 },
+    }), NOW)
+    expect(view.pill).toBe('想起 3 件旧事')
+    expect(view.header).toBe('想起的 3 件旧事')
+    expect(view.primary).toHaveLength(3)
+    expect(view.neighbors).toHaveLength(4)
+    expect(view.neighborLabel).toBe('还有 4 条顺带想起')
   })
 
   test('uses status copy for weak and empty recall', () => {
@@ -76,15 +124,23 @@ describe('buildMemoryReceiptView', () => {
       .toBe('没找到相关记忆')
   })
 
-  test('hides the summary segment when there is no T1', () => {
-    const view = buildMemoryReceiptView(dto({ t1: [], counts: { memories: 1, t1: 0 }, filteredT1: 0 }), NOW)
-    expect(view.sub).toBe('')
+  test('hides the neighbor line when there is no neighbor', () => {
+    const view = buildMemoryReceiptView(dto({
+      memories: [{
+        id: 'mem_a', type: 'semantic', abstraction: '用户偏好 TDD 先行',
+        date: '2026-11-16T00:00:00.000Z', available: true,
+      }],
+      t1: [],
+      counts: { memories: 1, t1: 0 },
+      filteredT1: 0,
+    }), NOW)
+    expect(view.neighborLabel).toBe('')
     expect(view.filteredLine).toBe('')
   })
 
   test('does not expose raw pointer ids in display strings', () => {
     const view = buildMemoryReceiptView(dto(), NOW)
-    const rendered = JSON.stringify({ ...view, memories: view.memories.map(({ id, ...rest }) => rest) })
+    const rendered = JSON.stringify({ ...view, primary: view.primary.map(({ id, ...rest }) => rest) })
     expect(rendered).not.toContain('#mem-')
   })
 })

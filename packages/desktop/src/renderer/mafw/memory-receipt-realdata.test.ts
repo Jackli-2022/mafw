@@ -43,7 +43,9 @@ describe('real recall fixture (2026-11-18)', () => {
       counts: { memories: 2, t1: 1 },
     }, NOW)
 
-    expect(view.memories).toHaveLength(3)
+    expect(view.primary).toHaveLength(2)
+    expect(view.neighbors).toHaveLength(1)
+    expect(view.neighborLabel).toBe('还有 1 条顺带想起')
     expect(view.t1).toHaveLength(1)
     expect(view.t1[0].excerpt).toBe('元信息怎么展示')
     expect(view.filteredLine).toBe('已过滤 2 段工具 / 子代理输出')

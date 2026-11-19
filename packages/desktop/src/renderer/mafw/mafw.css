@@ -9133,143 +9133,165 @@ html[data-theme="light"] body {
 .mafw-comments-pop-actions { padding: 6px 10px 8px; border-top: 1px solid var(--border-subtle); }
 .mafw-annot-rail-action { margin-left: auto; }
 
-/* ── Lead memory receipt (recall -> pill + hover card) ── */
-.mafw-memory-receipt-pill[data-component="button-v2"] {
-  height: 28px;
-  padding: 0 10px 0 3px;
-  gap: 7px;
-  border-radius: 999px;
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-float);
-  color: var(--text-2);
-  font-size: 12px;
-  font-weight: 500;
-}
-.mafw-memory-receipt-pill[data-component="button-v2"]:hover {
-  border-color: var(--border-strong, var(--text-4));
-  background: var(--bg-raised, var(--bg-float));
-}
-.mafw-memory-receipt-icon {
-  width: 20px;
+/* ── Lead memory receipt (recall -> quiet turn footer + hover card) ── */
+.mafw-memory-receipt-trigger[data-component="button-v2"] {
   height: 20px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  flex: none;
-  background: var(--accent-dim);
-  color: var(--accent-text);
-}
-.mafw-memory-receipt-div {
-  width: 1px;
-  height: 11px;
-  background: var(--border-subtle);
-}
-.mafw-memory-receipt-sub {
-  font-size: 11px;
+  min-height: 0;
+  padding: 0;
+  gap: 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: var(--text-3);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+.mafw-memory-receipt-trigger[data-component="button-v2"]:hover {
+  color: var(--text-2);
+  background: transparent;
+}
+.mafw-memory-receipt-glyph {
+  display: inline-flex;
+  flex: none;
+  color: var(--accent-text);
+  opacity: .82;
+}
+.mafw-memory-receipt-glyph svg {
+  width: 12px;
+  height: 12px;
+}
+.mafw-memory-receipt-chev {
+  color: var(--text-4);
+  font-size: 11px;
 }
 .mafw-memory-receipt-card {
-  width: 440px;
-  max-height: 460px;
+  width: 340px;
+  max-height: 360px;
   overflow: auto;
-  padding: 12px 14px;
+  padding: 0;
   border: 1px solid var(--border-subtle);
-  border-radius: var(--r-xl);
+  border-radius: var(--r-lg);
   background: var(--bg-float);
   box-shadow: var(--shadow-float);
   color: var(--text-1);
 }
 .mafw-memory-receipt-head {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--border-subtle);
-  font-size: 12.5px;
+  padding: 11px 13px 8px;
+  font-size: 11.5px;
   font-weight: 600;
 }
-.mafw-memory-receipt-count {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--accent-text);
-  background: var(--accent-dim);
-  border-radius: 999px;
-  padding: 1px 6px;
-}
-.mafw-memory-receipt-status {
-  margin-top: 8px;
-  font-size: 11px;
-  color: var(--text-3);
-}
-.mafw-memory-receipt-sec {
-  margin-top: 9px;
-  font-size: 10px;
+.mafw-memory-receipt-head-time {
+  margin-left: auto;
+  max-width: 62%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9.5px;
+  font-weight: 400;
   color: var(--text-4);
 }
-.mafw-memory-receipt-row,
-.mafw-memory-receipt-quote {
-  display: flex;
-  gap: 8px;
-  padding: 7px 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 60%, transparent);
+.mafw-memory-receipt-row {
+  position: relative;
+  padding: 8px 13px 7px;
+  border-top: 1px solid color-mix(in srgb, var(--border-subtle) 60%, transparent);
 }
-.mafw-memory-receipt-row.neighbor {
-  margin-left: 12px;
-  opacity: .82;
-}
-.mafw-memory-receipt-tag {
-  flex: none;
-  height: 17px;
-  padding: 0 6px;
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  background: var(--accent-dim);
-  color: var(--accent-text);
-  font-size: 9px;
-  font-weight: 600;
-}
-.mafw-memory-receipt-main { min-width: 0; flex: 1; }
-.mafw-memory-receipt-text {
+.mafw-memory-receipt-title {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   font-size: 11.5px;
-  line-height: 1.55;
+  line-height: 1.45;
   color: var(--text-1);
+}
+.mafw-memory-receipt-body {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top: 2px;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--text-3);
 }
 .mafw-memory-receipt-meta {
   margin-top: 2px;
+  font-size: 9px;
+  color: var(--text-4);
+}
+.mafw-memory-receipt-neighbors[data-component="button-v2"] {
+  width: 100%;
+  height: 28px;
+  min-height: 0;
+  justify-content: flex-start;
+  padding: 0 13px;
+  gap: 6px;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--border-subtle) 60%, transparent);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 10px;
+  font-weight: 400;
+}
+.mafw-memory-receipt-neighbors[data-component="button-v2"]:hover {
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--bg-overlay) 45%, transparent);
+}
+.mafw-memory-receipt-neighbors-chev {
+  color: var(--text-4);
+  font-size: 10px;
+  transition: transform var(--dur-1) var(--ease);
+}
+.mafw-memory-receipt-neighbors-chev.open {
+  transform: rotate(180deg);
+}
+.mafw-memory-receipt-row.is-neighbor {
+  padding-left: 22px;
+  opacity: .82;
+}
+.mafw-memory-receipt-t1 {
+  padding: 8px 14px 4px;
+  border-top: 1px solid color-mix(in srgb, var(--border-subtle) 60%, transparent);
+}
+.mafw-memory-receipt-t1-label {
+  margin-bottom: 4px;
   font-size: 9.5px;
   color: var(--text-4);
 }
-.mafw-memory-receipt-qmark {
-  flex: none;
-  color: var(--text-4);
-  font-size: 11px;
+.mafw-memory-receipt-quote {
+  padding: 4px 0;
 }
-.mafw-memory-receipt-filtered {
-  padding-top: 7px;
-  font-size: 9.5px;
-  color: var(--text-4);
+.mafw-memory-receipt-quote-text {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-1);
 }
 .mafw-memory-receipt-foot {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border-subtle);
+  justify-content: flex-end;
+  padding: 4px 8px 5px;
+  border-top: 1px solid color-mix(in srgb, var(--border-subtle) 60%, transparent);
 }
-.mafw-memory-receipt-fix {
-  font-size: 10px;
-  color: var(--text-4);
+.mafw-memory-receipt-open[data-component="button-v2"] {
+  height: 24px;
+  min-height: 0;
+  padding: 0 6px;
+  border: 0;
+  background: transparent;
+  color: var(--accent-text);
+  font-size: 10.5px;
+  font-weight: 400;
+}
+.mafw-memory-receipt-open[data-component="button-v2"]:hover {
+  background: color-mix(in srgb, var(--accent-dim) 55%, transparent);
 }
 
 .mafw-turn-memory-receipt {
-  margin: 8px 0 2px 25px;
+  margin: 4px 0 2px 25px;
 }
 
 /* ── Composer context ghost row (date / city / language) ── */
