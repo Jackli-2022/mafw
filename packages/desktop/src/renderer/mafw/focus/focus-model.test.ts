@@ -11,6 +11,7 @@ import {
   subjectKey,
   unkeepSubject,
   updatePlace,
+  withoutSubjects,
   type Scope,
   type SubjectRef,
 } from "./focus-model"
@@ -145,4 +146,16 @@ test("subjectKey treats version as frame state, not identity", () => {
 test("change-set subjects have a stable identity", () => {
   const subject: SubjectRef = { kind: "changeset", id: "changeset:session:s1:m1", rel: "src/a.ts" }
   assert.equal(subjectKey(subject), "changeset:changeset:session:s1:m1")
+})
+
+test("withoutSubjects drops closed tabs and keeps the rest in order", () => {
+  let state = openSubject(createWorkbenchState("w1"), worldScope, { kind: "world" })
+  state = openSubject(state, worldScope, { kind: "page", id: "approvals" })
+  state = openSubject(state, worldScope, { kind: "page", id: "config" })
+  state = openSubject(state, worldScope, file)
+
+  const pruned = withoutSubjects(state, (subject) => subject.kind === "page" && subject.id === "config")
+  assert.deepEqual(pruned.stack.map((focus) => subjectKey(focus.subject)), ["world", "page:approvals", subjectKey(file)])
+  assert.equal(withoutSubjects(state, () => false), state)
+  assert.deepEqual(withoutSubjects(state, () => true).stack, [])
 })

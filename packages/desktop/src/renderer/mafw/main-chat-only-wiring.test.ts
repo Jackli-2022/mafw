@@ -44,3 +44,13 @@ test("the dock toggle and workbench stay reachable without a config content mode
   assert.match(shell, /connDown\(\) && !activePageId\(\)/)
   assert.doesNotMatch(shell, /!showConfig\(\)/)
 })
+
+test("closing tabs prunes their focus so back cannot resurrect a closed page", () => {
+  const shell = read("MafwShell.tsx")
+  assert.match(shell, /const pruneClosedTabsFromFocus = \(closedIds: readonly string\[\]\) =>/)
+  assert.match(shell, /pruneClosedTabsFromFocus\(\[id\]\)/)
+  assert.match(shell, /pruneClosedTabsFromFocus\(\[\.\.\.closing\]\)/)
+  // A scene subject only maps to a tab that actually exists; the fallback
+  // ensureSceneTabFor must be reachable for restored/trimmed tabs.
+  assert.match(shell, /return documentTabs\(\)\.some\(\(entry\) => entry\.id === id\) \? id : null/)
+})

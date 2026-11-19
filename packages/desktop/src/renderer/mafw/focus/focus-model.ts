@@ -124,3 +124,15 @@ export function unkeepSubject(state: WorkbenchState, subject: SubjectRef): Workb
   const kept = state.kept.filter((item) => !sameSubject(item, subject))
   return kept.length === state.kept.length ? state : { ...state, kept }
 }
+
+/**
+ * 关闭 tab 时同步移除对应焦点。用谓词而不是单个 subject：
+ * 关闭「其他 / 右侧」可能一次移除多个。
+ */
+export function withoutSubjects(
+  state: WorkbenchState,
+  removed: (subject: SubjectRef) => boolean,
+): WorkbenchState {
+  const stack = state.stack.filter((focus) => !removed(focus.subject))
+  return stack.length === state.stack.length ? state : { ...state, stack }
+}

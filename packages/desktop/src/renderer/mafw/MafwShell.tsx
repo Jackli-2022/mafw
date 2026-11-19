@@ -150,6 +150,7 @@ import {
   openSubject,
   popFocus,
   selectFocus,
+  withoutSubjects,
   type Focus,
   type Scope,
   type WorkbenchState,
@@ -2971,7 +2972,20 @@ export function MafwShell() {
     if (subject.kind === "file") return fileDocumentTabId(subject.root, subject.rel)
     if (subject.kind === "changeset") return subject.id
     const scene = sceneSubjectOf(subject)
-    return scene ? sceneTabId(scene) : null
+    if (!scene) return null
+    const id = sceneTabId(scene)
+    return documentTabs().some((entry) => entry.id === id) ? id : null
+  }
+  /** 关闭 tab 时同步裁掉对应焦点；否则 back / 重启会把已关闭的页面复活。 */
+  const pruneClosedTabsFromFocus = (closedIds: readonly string[]) => {
+    const closed = new Set(closedIds)
+    const state = focusState()
+    const pruned = withoutSubjects(state, (subject) => {
+      const tabId = tabIdForSubject(subject)
+      return !!tabId && closed.has(tabId)
+    })
+    if (pruned === state) return
+    setFocusState(pruned.stack.length > 0 ? pruned : seedWorldRoot(pruned, focusScope()))
   }
   const syncStageToFocus = (state: WorkbenchState) => {
     const focus = state.stack[state.stack.length - 1]
@@ -3107,6 +3121,7 @@ export function MafwShell() {
     const wasActive = active === id
     const next = nextDocumentTabId(entries, id, active)
     requestCloseDocumentTab(id)
+    pruneClosedTabsFromFocus([id])
     if (!wasActive) return
     if (next) focusDocumentTab(next)
     else showWorkbenchLanding()
@@ -3118,6 +3133,7 @@ export function MafwShell() {
     const wasActive = !!active && closing.has(active)
     const survivors = entries.filter((entry) => !closing.has(entry.id))
     for (const id of ids) requestCloseDocumentTab(id)
+    pruneClosedTabsFromFocus([...closing])
     if (!wasActive) return
     const next = survivors[0]?.id ?? null
     if (next) focusDocumentTab(next)
