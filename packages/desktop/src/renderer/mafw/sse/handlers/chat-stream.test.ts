@@ -15,7 +15,6 @@ function makeDeps(store: any = { message: {}, part: {}, session_status: {} }) {
     markSessionDone: rec("markSessionDone"),
     setUserMsgId: rec("setUserMsgId"),
     parentFallback: () => "u1",
-    phase: rec("phase"),
     onTurnSettled: rec("onTurnSettled"),
     mediaSpeak: rec("mediaSpeak"),
   }
@@ -39,21 +38,19 @@ describe("handleChatStreamEvent", () => {
     expect(calls.some(c => c.name === "setUserMsgId")).toBe(false)
   })
 
-  test("part.delta → busy + phase(writing) + patchStore (consumed)", () => {
+  test("part.delta → busy + patchStore (consumed)", () => {
     const { deps, calls } = makeDeps()
     const ok = handleChatStreamEvent({ type: "part.delta", sessionID: "s1", properties: { messageID: "m1", partID: "p1", field: "text", delta: "hi" } }, "s1", deps)
     expect(ok).toBe(true)
-    expect(calls.find(c => c.name === "phase")!.args).toEqual(["s1", "writing"])
     expect(calls.find(c => c.name === "setSessionStatus")!.args).toEqual(["s1", "busy"])
     expect(calls.map(c => c.name)).toContain("patchStore")
   })
 
-  test("turn.started → busy + phase，不结算、不置 done", () => {
+  test("turn.started → busy，不结算、不置 done", () => {
     const { deps, calls } = makeDeps()
     const ok = handleChatStreamEvent({ type: "turn.started", sessionID: "s1", properties: { sessionID: "s1" } }, "s1", deps)
     expect(ok).toBe(true)
     expect(calls.find(c => c.name === "setSessionStatus")!.args).toEqual(["s1", "busy"])
-    expect(calls.find(c => c.name === "phase")!.args).toEqual(["s1", "writing"])
     expect(calls.map(c => c.name)).not.toContain("markSessionDone")
     expect(calls.map(c => c.name)).not.toContain("onTurnSettled")
   })
@@ -65,7 +62,7 @@ describe("handleChatStreamEvent", () => {
     expect(calls.map(c => c.name)).toContain("patchStore")
   })
 
-  test("part.updated → busy + phase + patchStore（落穿：不消费，media_speak 仍需检查）", () => {
+  test("part.updated → busy + patchStore（落穿：不消费，media_speak 仍需检查）", () => {
     const { deps, calls } = makeDeps()
     const ok = handleChatStreamEvent({ type: "part.updated", sessionID: "s1", properties: { part: { id: "p1", type: "text", text: "x", messageID: "m1" } } }, "s1", deps)
     expect(ok).toBe(false)
@@ -73,13 +70,12 @@ describe("handleChatStreamEvent", () => {
     expect(calls.map(c => c.name)).toContain("patchStore")
   })
 
-  test("part.updated data-* → patchStore but NO busy/phase（带外注入不钉忙）", () => {
+  test("part.updated data-* → patchStore but NO busy（带外注入不钉忙）", () => {
     const { deps, calls } = makeDeps()
     const ok = handleChatStreamEvent({ type: "part.updated", sessionID: "s1", properties: { part: { id: "data_x", type: "data-swarm", data: { v: 1 }, messageID: "m1" } } }, "s1", deps)
     expect(ok).toBe(false)
     expect(calls.map(c => c.name)).toContain("patchStore")
     expect(calls.map(c => c.name)).not.toContain("setSessionStatus")
-    expect(calls.map(c => c.name)).not.toContain("phase")
   })
 
   test("part.updated tool → applyToolPart（running 合并入口），不直接 patchStore", () => {

@@ -34,7 +34,6 @@ export interface ChatDeps {
   markSessionDone(sid: string): void
   setUserMsgId(sid: string, msgId: string): void
   parentFallback(sid: string): string | null
-  phase(sid: string, p: "writing"): void
   /** 回合收束：sendingResetters + queueFlushers（+ 可选卡片过期）。 */
   onTurnSettled(sid: string, opts: { expireCards: boolean }): void
   mediaSpeak(sid: string, text: string, voice?: string): void
@@ -80,7 +79,6 @@ export const handleChatStreamEvent: SidHandler = (event, sid, deps) => {
     if (!msgId || !partID || (field !== "text" && field !== "reasoning")) return true
     const delta = props.delta
     if (!delta) return true
-    d.phase(sid, "writing")
     // turn.started 可能没看到（中途进入会话）：delta 本身就是“正在跑”的证据。
     d.setSessionStatus(sid, "busy")
     const out = applyPartDelta(d.getStore(), sid, msgId, partID, delta, field)
@@ -92,7 +90,6 @@ export const handleChatStreamEvent: SidHandler = (event, sid, deps) => {
   // 不结算、不置 done（终态由 turn.* 三元组负责）。
   if (event.type === "turn.started") {
     d.trace(event, "chat:turn-start")
-    d.phase(sid, "writing")
     d.setSessionStatus(sid, "busy")
     noteTurnActivity(sid)
     return true
@@ -117,7 +114,6 @@ export const handleChatStreamEvent: SidHandler = (event, sid, deps) => {
       // T2-3：data-* 是带外结构化数据（可离线注入）——不得把空闲会话钉在 busy。
       const dataPart = typeof part.type === "string" && part.type.startsWith("data-")
       if (!dataPart) {
-        d.phase(sid, "writing")
         d.setSessionStatus(sid, "busy")
       }
       if (part.type === "tool" && d.applyToolPart) d.applyToolPart(ingestLivePart(part, sid), sid)

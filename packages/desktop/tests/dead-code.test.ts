@@ -57,4 +57,25 @@ describe("dead code 清理", () => {
     expect(work).toContain("pod.createGoal")
     expect(existsSync(join(root, "src/renderer/mafw/components/WorkspaceHome.tsx"))).toBe(false)
   })
+
+  test("inputbar 上方的生成提示条已删除（ChatPane 不再渲染）", () => {
+    const pane = read("src/renderer/mafw/components/ChatPane.tsx")
+    expect(pane).not.toContain("mafw-phase-bar")
+    expect(pane).not.toContain("正在生成…")
+    expect(pane).not.toContain("setPhase")
+  })
+
+  test("生成提示条样式已删除（无 phase bar / dot / pulse 残留）", () => {
+    const css = read("src/renderer/mafw/mafw.css")
+    expect(css).not.toContain(".mafw-phase-bar")
+    expect(css).not.toContain(".mafw-phase-dot")
+    expect(css).not.toContain("mafw-phase-pulse")
+  })
+
+  test("生成阶段状态管线已删除（SSE / send / shell / workspace 不再传递 phase）", () => {
+    expect(read("src/renderer/mafw/sse/handlers/chat-stream.ts")).not.toContain("d.phase(")
+    expect(read("src/renderer/mafw/chat/use-send-message.ts")).not.toContain("setPhase")
+    expect(read("src/renderer/mafw/MafwShell.tsx")).not.toContain("phaseUpdaters")
+    expect(read("src/renderer/mafw/workspace/session-workspace.ts")).not.toContain('"phase"')
+  })
 })

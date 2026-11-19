@@ -295,14 +295,12 @@ describe("Composer v4", () => {
   test("附件缩略图 20px", () => expect(cssBlock(".mafw-chip-thumb {")).toContain("width: 20px"))
 })
 
-describe("Sticky header + phase bar v4", () => {
+describe("Sticky header v4", () => {
   test("sticky header 实底 + hairline", () => {
     const b = cssBlock(".mafw-session-titlebar {")
     expect(b).toContain("background: var(--bg-base)")
     expect(b).toContain("border-bottom: 1px solid var(--border-subtle)")
   })
-  test("phase bar 28px", () => expect(cssBlock(".mafw-phase-bar {")).toContain("height: 28px"))
-  test("phase dot 4px", () => expect(cssBlock(".mafw-phase-dot {")).toContain("width: 4px"))
 })
 
 describe("用量指标行 v4", () => {

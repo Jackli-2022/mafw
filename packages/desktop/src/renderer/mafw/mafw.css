@@ -139,7 +139,7 @@
   --ease-exit: cubic-bezier(.4,0,1,1);
   --dur-morph: 340ms;
   /* 循环动画时长（不属 token 尺度，集中建档）：mafw-breathe 2s|1s · mafw-spin 1s · mafw-think-spin 1.2s
-     · mafw-phase-pulse 1.2s|0.8s · mafw-shimmer 1.2s · mafw-eq 0.8s · mafw-voice-pulse 1.5s */
+     · mafw-shimmer 1.2s · mafw-eq 0.8s · mafw-voice-pulse 1.5s */
   /* v5.1 双字体契约：sans 管 UI、mono 管数据（复用 ui 包既有变量，像素零变化） */
   --font-family-sans: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
   --font-family-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
@@ -1476,42 +1476,6 @@ html[data-theme="light"] body {
   height: 100%;
   color: var(--text-weak);
   font-size: 13px;
-}
-
-/* ── Phase indicator bar (Perplexity-style) ── */
-@keyframes mafw-phase-pulse {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 1; }
-}
-.mafw-phase-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 28px;
-  padding: 0 16px;
-  width: min(var(--msg-col-width), calc(100% - 64px));
-  margin-inline: auto;
-  font-size: 12px;
-  color: var(--text-3);
-  flex-shrink: 0;
-  animation: mafw-enter var(--dur-2) var(--ease);
-}
-.mafw-phase-dot {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.mafw-phase-searching .mafw-phase-dot {
-  background: var(--accent, #6366f1);
-  animation: mafw-phase-pulse 1.2s ease-in-out infinite;
-}
-.mafw-phase-writing .mafw-phase-dot {
-  background: var(--accent);
-  animation: mafw-phase-pulse 0.8s ease-in-out infinite;
-}
-.mafw-phase-writing .mafw-phase-text {
-  color: var(--text-2);
 }
 
 /* ── Pending-cards pill (above the composer) ── */

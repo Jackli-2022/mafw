@@ -77,7 +77,6 @@ export interface SendMessageDeps {
   setInput: (v: string) => void
   sending: () => boolean
   setSending: (v: boolean) => void
-  setPhase: (v: 'idle' | 'searching' | 'writing') => void
   attachments: () => any[]
   setAttachments: (v: any[]) => void
   mentionedAgents: () => any[]
@@ -158,7 +157,7 @@ export function decideBusyDelivery(opts: {
 
 export function useSendMessage(deps: SendMessageDeps) {
   const {
-    input, setInput, sending, setSending, setPhase,
+    input, setInput, sending, setSending,
     attachments, setAttachments, mentionedAgents, setMentionedAgents,
     mentionedFiles, setMentionedFiles, queuedItems, setQueuedItems,
     textareaEl, history, clearDraft, matchSlash, agentSel, model,
@@ -315,7 +314,6 @@ export function useSendMessage(deps: SendMessageDeps) {
       if (cmd) {
         const rest = parseSlashShape(text.trim())?.args ?? ""
         setSending(true)
-        setPhase('searching')
         setInput("")
         history.push(text)
         clearDraft(sidProp())
@@ -344,14 +342,12 @@ export function useSendMessage(deps: SendMessageDeps) {
           showToastV2({ description: `/${cmd.name} 执行失败: ${e?.message || String(e)}`, duration: 4000 })
         }
         setSending(false)
-        setPhase('idle')
         return
       }
     }
 
     // Discussion-only path: annotations stay local until the transport succeeds.
     setSending(true)
-    setPhase('searching')
     history.push(text)
     clearDraft(sidProp())
     setInput("")
@@ -534,13 +530,11 @@ export function useSendMessage(deps: SendMessageDeps) {
           console.warn("[mafw] sendEnriched failed:", errMsg)
           showToastV2({ description: `Chat failed: ${errMsg}`, duration: 5000 })
           setSending(false)
-          setPhase('idle')
         }
       }
     } catch (err: any) {
       console.warn("[mafw] sendEnriched error:", err.message)
       setSending(false)
-      setPhase('idle')
       showToastV2({ description: `Chat failed: ${err.message}`, duration: 5000 })
     }
   }
@@ -555,7 +549,6 @@ export function useSendMessage(deps: SendMessageDeps) {
       console.warn("[mafw] interrupt failed", e)
     }
     setSending(false)
-    setPhase('idle')
   }
 
   // Dispatch the next queued turn (called from MafwShell on session idle).

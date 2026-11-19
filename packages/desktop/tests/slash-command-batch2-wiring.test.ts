@@ -52,7 +52,7 @@ test("init command sends the fixed prompt through promptAsync", () => {
   assert.match(commandBlock("init"), /sessions\.promptAsync/)
   assert.match(commandBlock("init"), /setSending\(true\)/)
   assert.match(commandBlock("init"), /props\.sendBlocked\?\.\(\)/)
-  assert.match(commandBlock("init"), /setPhase\("idle"\)/)
+  assert.match(commandBlock("init"), /catch \(e: any\) \{[\s\S]{0,160}?setSending\(false\)/)
   const init = commandBlock("init")
   assert.ok(init.indexOf("sessionBusy()") >= 0)
   assert.ok(init.indexOf("sessionBusy()") < init.indexOf("promptAsync"))

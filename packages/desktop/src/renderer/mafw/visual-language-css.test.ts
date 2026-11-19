@@ -253,10 +253,9 @@ describe("readable metadata and session icons", () => {
 })
 
 describe("motion discipline", () => {
-  test("ready state is static and phase uses one loop", () => {
+  test("ready state is static", () => {
     expect(block(".mafw-titlebar-dot.ready")).not.toContain("animation")
     expect(block(".mafw-titlebar-dot.ready")).not.toContain("glow-accent")
-    expect(block(".mafw-phase-searching .mafw-phase-text")).not.toContain("animation")
   })
 
   test("reduced motion stops loops but keeps status text", () => {

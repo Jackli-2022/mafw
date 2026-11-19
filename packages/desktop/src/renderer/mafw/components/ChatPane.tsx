@@ -408,7 +408,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [input, setInput] = createSignal("")
   const [runsOpen, setRunsOpen] = createSignal(false)
   const [sending, setSending] = createSignal(false)
-  const [phase, setPhase] = createSignal<'idle' | 'searching' | 'writing'>('idle')
   const episodeStore = createMemo(() => createEpisodeStore(window.localStorage, sidProp()))
   const [episodes, setEpisodes] = createSignal<ChatEpisode[]>([])
   const [episodeCollapseOverrides, setEpisodeCollapseOverrides] = createSignal<ReadonlyMap<string, boolean>>(new Map())
@@ -1113,14 +1112,12 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   onMount(() => {
     if (sidProp()) workspace.register("anchor", sidProp(), forceAnchor)
-    workspace.register("sendingReset", sidProp(), () => { setSending(false); setPhase('idle') })
-    workspace.register("phase", sidProp(), setPhase)
+    workspace.register("sendingReset", sidProp(), () => { setSending(false) })
   })
   onCleanup(() => {
     props.onTitlebarRef(null)
     if (sidProp()) workspace.unregister("anchor", sidProp())
     workspace.unregister("sendingReset", sidProp())
-    workspace.unregister("phase", sidProp())
   })
 
   const addAgent = (name: string) => {
@@ -1262,7 +1259,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     sid: () => sidProp(),
     onCreateSession: () => props.onCreateSession(),
     onSetUserMsgId: (s2, id) => props.onSetUserMsgId(s2, id),
-    input, setInput, sending, setSending, setPhase,
+    input, setInput, sending, setSending,
     attachments, setAttachments,
     mentionedAgents, setMentionedAgents,
     mentionedFiles, setMentionedFiles,
@@ -1834,13 +1831,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               return
             }
             setSending(true)
-            setPhase("searching")
             try {
               await window.api.mafw.sessions.promptAsync({ sessionID: sid, message: INIT_AGENTS_PROMPT })
               showToastV2({ description: "已开始生成 AGENTS.md", duration: 3000 })
             } catch (e: any) {
               setSending(false)
-              setPhase("idle")
               console.warn("[mafw] init failed:", e?.message ?? e)
               showToastV2({ description: "初始化失败，请稍后重试", duration: 4000 })
             }
@@ -2783,15 +2778,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           </ButtonV2>
         </Show>
       </div>
-      {/* Phase indicator bar (Perplexity-style) */}
-      <Show when={phase() !== 'idle'}>
-        <div class={`mafw-phase-bar mafw-phase-${phase()}`}>
-          <span class="mafw-phase-dot" />
-          <span class="mafw-phase-text">
-            {phase() === 'searching' ? '正在处理…' : '正在生成…'}
-          </span>
-        </div>
-      </Show>
       {/* InputArea — 760px centered wrapper: composer box (§4.7). Hidden for
           read-only (subagent) sessions: subagents are not user-facing chats. */}
       <Show when={!props.readOnly}>

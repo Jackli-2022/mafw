@@ -59,7 +59,6 @@ function makeDeps() {
       markSessionDone: rec("markSessionDone"),
       setUserMsgId: rec("setUserMsgId"),
       parentFallback: () => null,
-      phase: rec("phase"),
       onTurnSettled: rec("onTurnSettled"),
       mediaSpeak: rec("mediaSpeak"),
     },

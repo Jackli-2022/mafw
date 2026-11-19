@@ -121,7 +121,6 @@ describe("sendMessage annotation discussion", () => {
       setInput: (v: string) => { inputValue = v },
       sending: () => false,
       setSending: () => {},
-      setPhase: () => {},
       attachments: () => [],
       setAttachments: () => {},
       mentionedAgents: () => [],
@@ -246,7 +245,6 @@ describe("sendMessage busy 排队路径", () => {
         setInput: (v: string) => { inputVal = v },
         sending: () => true, // busy → queue branch
         setSending: () => {},
-        setPhase: () => {},
         attachments: () => [],
         setAttachments: () => {},
         mentionedAgents: () => [],

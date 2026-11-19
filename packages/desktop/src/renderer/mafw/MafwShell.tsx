@@ -992,7 +992,6 @@ export function MafwShell() {
   // Compaction boundary marks per session (session.compacted SSE events) —
   // rendered by ChatPane as a divider above the surviving context.
   const [compactionMarks, setCompactionMarks] = createSignal<Record<string, { at: number; summary?: string }>>({})
-  const phaseUpdaters = workspace.records.phase
   // mafw_media_speak 工具事件 → 对应会话 ChatPane 的流式播放回调
   const mediaSpeakHandlers = workspace.records.mediaSpeak
 
@@ -1580,7 +1579,6 @@ export function MafwShell() {
       markSessionDone: (sid) => setSessions(prev => prev.map(x => x.id === sid ? { ...x, done: true } : x)),
       setUserMsgId: (sid, msgId) => setSessions(prev => prev.map(x => x.id === sid ? { ...x, userMsgId: msgId } : x)),
       parentFallback: (sid) => sessions().find(x => x.id === sid)?.userMsgId || null,
-      phase: (sid, p) => phaseUpdaters[sid]?.(p),
       onTurnSettled: (sid, o) => {
         sendingResetters[sid]?.()
         if (o.expireCards) expireSessionCards(sid)

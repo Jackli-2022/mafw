@@ -26,7 +26,7 @@ export type WorkspaceStore = {
   part: Record<string, any[]>
 }
 
-export type RegistryKind = "anchor" | "sendingReset" | "queueFlush" | "phase" | "mediaSpeak"
+export type RegistryKind = "anchor" | "sendingReset" | "queueFlush" | "mediaSpeak"
 type RegistryFn = (...args: any[]) => void
 
 export function createSessionWorkspace() {
@@ -43,13 +43,12 @@ export function createSessionWorkspace() {
   })
 
   // per-session 回调注册表：anchor（滚动锚）/ sendingReset（发送态复位）/
-  // queueFlush（排队续发）/ phase（阶段指示）/ mediaSpeak（TTS 播报）。
+  // queueFlush（排队续发）/ mediaSpeak（TTS 播报）。
   // 保留 Record 形态以兼容既有 `registry[sid]?.()` 调用点（shell 侧别名引用）。
   const records: Record<RegistryKind, Record<string, RegistryFn>> = {
     anchor: {},
     sendingReset: {},
     queueFlush: {},
-    phase: {},
     mediaSpeak: {},
   }
 
