@@ -26,9 +26,11 @@
   左边缘与答案对齐、浮在下方，不压住答案本身；点外部 / Esc 关闭，再点收尾线收起。
   浮层只列 3 条主记忆；每条在首个自然标点（`：。；，` / `: . ; ,`）处切成
   「标题 + 一行上下文」，长句用省略号收尾，不凭空生成摘要。浮层不改变 turn 布局。
-- **翻记忆 → MemoryPage**：按钮 `onClick` 先 `event.stopPropagation()`，再 `onOpenMemory()`。
-  否则 Portal 里的点击仍会走 Solid 的委托事件到 `ChatPane` 根的 `onFocus`，把 `activeTab`
-  立刻拉回 `chat`，看起来像「点了没用」。
+- **翻记忆 → MemoryPage**：按钮 `onClick` 先 `event.stopPropagation()`，再 `setOpen(false)` + `onOpenMemory()`。
+  右工作台把 `memory` 作为持久 scene tab / focus subject（`scene:memory`，icon `memory` → `brain`），
+  `MemoryPage` 以 `compact` 模式渲染（隐藏 PageHeader，保留 tabs / 搜索 / 卡片），不再切主区
+  `activeTab`；否则 Portal 里的点击仍会走 Solid 的委托事件到 `ChatPane` 根的 `onFocus`，
+  把 `activeTab` 立刻拉回 `chat`，看起来像「点了没用」。
 - **邻居**：4 条邻居不再进主列表，折进「还有 4 条顺带想起」，点开才展开。
 - **计数一致**：pill / 卡片头 / 行数都只算 primary（主记忆），不再出现 3 对 7。
 - **轻量元数据**：移除事实/做法类型标签与 `pinned / 相关`；只保留相对时间，置信度文案
