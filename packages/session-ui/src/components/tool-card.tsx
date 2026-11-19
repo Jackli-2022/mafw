@@ -29,9 +29,7 @@ function safeHref(href: string | undefined): string | undefined {
 }
 
 export function ToolCard(input: ToolCardProps) {
-  const [internalOpen, setInternalOpen] = createSignal(
-    input.defaultOpen ?? input.presentation.expanded.defaultOpen ?? false,
-  )
+  const [internalOpen, setInternalOpen] = createSignal(input.defaultOpen ?? false)
   const open = () => input.open ?? internalOpen()
   const setOpen = (value: boolean) => {
     if (input.open === undefined) setInternalOpen(value)

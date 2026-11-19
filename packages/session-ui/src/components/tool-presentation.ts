@@ -58,7 +58,6 @@ export interface ToolExpandedPresentation {
   body?: "default" | "markdown" | "terminal" | "json" | "diff" | "custom"
   sections?: Section[]
   actions?: ToolAction[]
-  defaultOpen?: boolean
 }
 
 /**

@@ -132,7 +132,7 @@ export function ExecuteBody(props: ToolProps) {
 export function presentExecute(ctx: ToolPresentationContext): ToolPresentation {
   return {
     collapsed: executeCollapsed(ctx.props),
-    expanded: { body: "custom", defaultOpen: true },
+    expanded: { body: "custom" },
   }
 }
 
@@ -144,7 +144,6 @@ export function MafwExecuteCard(props: ToolProps) {
     <BasicTool
       icon="console"
       status={props.status}
-      defaultOpen
       defer={false}
       trigger={(open) => (
         <div class="mafw-execute-trigger">

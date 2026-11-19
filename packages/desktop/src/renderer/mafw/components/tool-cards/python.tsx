@@ -76,7 +76,6 @@ export function MafwPythonCard(props: ToolProps) {
         args: codeArg() ? [`code: ${codeArg()}`] : undefined,
       }}
       status={props.status}
-      defaultOpen
       animated
     >
       <div class="mafw-python-card">
@@ -124,7 +123,6 @@ export function MafwPythonRestartCard(props: ToolProps) {
       icon="reset"
       trigger={{ title: "Python 内核重启", subtitle: out() ? out().slice(0, 60) : undefined }}
       status={props.status}
-      defaultOpen
       animated
     >
       <pre class="mafw-tool-output">{out() || "(无输出)"}</pre>

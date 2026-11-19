@@ -100,7 +100,6 @@ function GoalCreatedBody(props: { view: () => GoalCreatedView; status?: string }
         ),
       }}
       status={props.status}
-      defaultOpen
       animated
     >
       <div class="mafw-tool-box mafw-goal-created">

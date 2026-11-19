@@ -30,4 +30,9 @@ describe("ToolCard shell", () => {
     expect(tsx).toContain("mafw-tool-card-group")
     expect(tsx).toContain("safeHref")
   })
+
+  test("defaults every card to collapsed", () => {
+    expect(tsx).toContain("input.defaultOpen ?? false")
+    expect(tsx).not.toContain("expanded.defaultOpen")
+  })
 })

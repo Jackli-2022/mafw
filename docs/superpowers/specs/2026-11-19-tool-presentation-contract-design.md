@@ -85,7 +85,6 @@ export interface ToolExpandedPresentation {
   body?: "default" | "markdown" | "terminal" | "json" | "diff" | "custom"
   sections?: Section[]
   actions?: ToolAction[]
-  defaultOpen?: boolean
 }
 
 /**
@@ -219,7 +218,7 @@ ToolRegistry.entry(name)                  // 只读快照，调试/测试用
 
 - **折叠态**：一行，始终显示 `collapsed.title` + `collapsed.object` + `collapsed.meta` + chevron；无前置图标。
 - **展开态**：折叠行不变，下面挂 `expanded` 正文。
-- **两个样式是显式的**：`ToolCard` 根节点写 `data-state="collapsed" | "expanded"`；CSS 只按这两个状态写，不再靠位置（时间线 / 聊天）覆盖。默认 `collapsed`，`expanded.defaultOpen === true` 才初始展开。
+- **两个样式是显式的**：`ToolCard` 根节点写 `data-state="collapsed" | "expanded"`；CSS 只按这两个状态写，不再靠位置（时间线 / 聊天）覆盖。**运行时默认 `collapsed`**；只有调用方显式 `defaultOpen`（如详情模式）才初始展开。
 - **正文选择顺序**：
   1. `expanded.sections` → `renderSections`
   2. `expanded.body` 对应的内置渲染器（`default` / `markdown` / `terminal` / `json`）
@@ -275,10 +274,10 @@ ToolRegistry.entry(name)                  // 只读快照，调试/测试用
 - 展开态（`renderBody`，保留现有 `MafwExecuteCard` 正文）：
   - 子调用行：状态字形 + 工具图标/名称 + 参数摘要；点击仅展开 **input JSON**（不是结果）；
   - 最终输出：`ToolSections`（KV/code/list），8KB / 200 行限幅，超出显示“展开全部”；
-  - 运行中：`defaultOpen: true`，子调用行实时更新；不解析最终输出；
+  - 运行中：默认折叠，用户点开看子调用行实时更新；不解析最终输出；
   - 空态：运行中“等待脚本调用工具…”，完成“脚本未调用工具”；
   - 失败：失败行红色；最终错误文本按 `state.output`/`error` 展示。
-- `present`：`collapsed` 由 `executeCalls` / `executeHeaderSubtitle` 生成；`expanded = { body: "custom", defaultOpen: true }`；`renderBody` 指向 `ExecuteBody`。
+- `present`：`collapsed` 由 `executeCalls` / `executeHeaderSubtitle` 生成；`expanded = { body: "custom" }`；`renderBody` 指向 `ExecuteBody`。
 - **不**为子调用行伪造结果；如果产品必须逐个子调用结果，使用 `codemode: false`（直连 tool part）或等 upstream callID。
 - 脚本代码不内联到折叠行；需要时后续加“查看脚本”动作，默认不展开 `input.code`。
 
