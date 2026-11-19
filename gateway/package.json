@@ -12,7 +12,7 @@
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
     "test": "jest --runInBand",
-  "drill:plugin-trust": "jest --runInBand tests/integration/plugin-trust-drill.test.ts",
+    "drill:plugin-trust": "jest --runInBand tests/integration/plugin-trust-drill.test.ts",
     "deploy:local": "node scripts/deploy-local.mjs"
   },
   "dependencies": {
@@ -29,6 +29,7 @@
     "js-yaml": "^4.1.0",
     "jsonc-parser": "^3.3.1",
     "langchain-mcp-adapters": "^0.6.0",
+    "selfsigned": "^2.4.1",
     "simple-git": "^3.36.0",
     "ws": "^8.21.3",
     "zeromq": "^6.1.2"
