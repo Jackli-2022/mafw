@@ -88,6 +88,10 @@
   `phase` 管线（ChatPane signal / `workspace.phase` / send / SSE）已随 UI 一并删除，
   避免留下没有消费者的死接线。详见
   `docs/releases/2026-11-19-inputbar-phase-bar-removed.md`。
+- **上下文圆环（2026-11-19）**：占用取最近一条带 tokens 的 assistant，而不是数组最后一条；
+  新回合的骨架消息在完成前没有 tokens，直接取会让整轮生成显示 0%。hover 只显示
+  上下文占用 / 上下文容量 / 比率，不再拼接会话累计与费用。详见
+  `docs/releases/2026-11-19-context-ring-usage.md`。
 - **Agent-native Chat 意图（2026-11-15 起）**：composer 只保留一个发送面，讨论 / 提议 / 委托 / 解决
   四模式已移除。Lead 按系统提示直接调用 `mafw_create_goal` 建立 `discussing` Goal（带当前话题
   快照，不启动 NodeDriver）；桌面把该工具结果渲染成 `GoalCreatedCard`（打开 Tech Lead 讨论 /
