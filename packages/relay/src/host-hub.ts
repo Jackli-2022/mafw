@@ -56,6 +56,10 @@ class HostStream extends Duplex {
   }
 }
 
+export interface HostQuota {
+  allowBytes(roomId: string, bytes: number): boolean;
+}
+
 /**
  * M1 host control plane. One WebSocket per host connection, multiplexed streams
  * identified by a 32-bit id. The relay never parses the stream contents.
@@ -63,9 +67,11 @@ class HostStream extends Duplex {
 export class HostHub {
   private readonly hosts = new Map<string, HostConnection>();
   private readonly registry: RoomRegistry;
+  private readonly quota?: HostQuota;
 
-  constructor(registry: RoomRegistry) {
+  constructor(registry: RoomRegistry, quota?: HostQuota) {
     this.registry = registry;
+    this.quota = quota;
   }
 
   attach(ws: WebSocket): void {
@@ -186,6 +192,10 @@ export class HostHub {
     const stream = connection.streams.get(frame.streamId);
     if (!stream) return;
     if (frame.type === 1) {
+      if (this.quota && !this.quota.allowBytes(connection.roomId, frame.payload.length)) {
+        this.closeStream(connection.roomId, frame.streamId);
+        return;
+      }
       stream.pushFromHost(frame.payload);
     } else if (frame.type === 3) {
       connection.streams.delete(frame.streamId);

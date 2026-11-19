@@ -2,6 +2,7 @@ import * as http from 'node:http';
 import { once } from 'node:events';
 import { WebSocketServer } from 'ws';
 import { HostHub } from './host-hub.ts';
+import { Quota } from './quota.ts';
 import { RoomRegistry } from './registry.ts';
 import { SqliteRoomStore } from './room-store.ts';
 import { createTlsRouter, type TlsRouter } from './tls-router.ts';
@@ -14,6 +15,7 @@ export interface RelayServerOptions {
   adminPort?: number;
   /** M4: SQLite file for durable room claims; omit for in-memory (tests). */
   dbPath?: string;
+  quota?: Quota;
   registry?: RoomRegistry;
 }
 
@@ -29,6 +31,7 @@ export interface RelayServer {
   ports(): RelayPorts;
   readonly registry: RoomRegistry;
   readonly hub: HostHub;
+  readonly quota: Quota;
 }
 
 export function createRelayServer(opts: RelayServerOptions): RelayServer {
@@ -37,13 +40,15 @@ export function createRelayServer(opts: RelayServerOptions): RelayServer {
   const registry = opts.registry ?? new RoomRegistry(
     opts.dbPath ? new SqliteRoomStore(opts.dbPath) : undefined,
   );
-  const hub = new HostHub(registry);
+  const quota = opts.quota ?? new Quota();
+  const hub = new HostHub(registry, quota);
   const router: TlsRouter = createTlsRouter({
     domain: opts.domain,
     registry,
     hosts: hub,
     listenHost,
     listenPort: opts.tlsPort ?? 443,
+    quota,
   });
 
   let admin: http.Server | null = null;
@@ -53,6 +58,7 @@ export function createRelayServer(opts: RelayServerOptions): RelayServer {
   return {
     registry,
     hub,
+    quota,
 
     async start(): Promise<void> {
       if (ports) return;

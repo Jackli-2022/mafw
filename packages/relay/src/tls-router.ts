@@ -9,6 +9,12 @@ export interface RouterHosts {
   openStream(roomId: string): Promise<Duplex>;
 }
 
+export interface RouterQuota {
+  allowStream(roomId: string, ip: string): boolean;
+  releaseStream(roomId: string, ip: string): void;
+  allowBytes(roomId: string, bytes: number): boolean;
+}
+
 export interface TlsRouterOptions {
   domain: string;
   registry: RoomRegistry;
@@ -16,6 +22,7 @@ export interface TlsRouterOptions {
   listenHost?: string;
   listenPort?: number;
   clientHelloTimeoutMs?: number;
+  quota?: RouterQuota;
 }
 
 export interface TlsRouter {
@@ -76,23 +83,59 @@ export function createTlsRouter(opts: TlsRouterOptions): TlsRouter {
         return;
       }
 
+      const clientIp = (socket.remoteAddress || '').replace(/^::ffff:/, '');
+      if (opts.quota && !opts.quota.allowStream(room.roomId, clientIp)) {
+        reject(socket);
+        return;
+      }
+      let released = false;
+      const release = (): void => {
+        if (released) return;
+        released = true;
+        opts.quota?.releaseStream(room.roomId, clientIp);
+      };
+      if (opts.quota && !opts.quota.allowBytes(room.roomId, buffered.length)) {
+        release();
+        reject(socket);
+        return;
+      }
+
       void opts.hosts.openStream(room.roomId).then((stream) => {
         if (socket.destroyed) {
           stream.destroy();
+          release();
           return;
         }
         streams.add(stream);
-        stream.on('close', () => streams.delete(stream));
-        stream.on('error', () => socket.destroy());
+        stream.on('close', () => {
+          streams.delete(stream);
+          release();
+        });
+        stream.on('error', () => {
+          socket.destroy();
+          release();
+        });
         socket.on('error', () => stream.destroy());
-        socket.on('close', () => stream.destroy());
+        socket.on('close', () => {
+          stream.destroy();
+          release();
+        });
+        socket.on('data', (chunk: Buffer) => {
+          if (opts.quota && !opts.quota.allowBytes(room.roomId, chunk.length)) {
+            socket.destroy();
+            stream.destroy();
+          }
+        });
 
         stream.write(buffered);
         buffered = Buffer.alloc(0);
         socket.pipe(stream);
         stream.pipe(socket);
         socket.resume();
-      }).catch(() => reject(socket));
+      }).catch(() => {
+        release();
+        reject(socket);
+      });
     };
 
     socket.on('data', onData);
