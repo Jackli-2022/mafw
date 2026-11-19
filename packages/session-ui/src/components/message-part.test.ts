@@ -65,6 +65,19 @@ describe("diff tools use the shared presentation path", () => {
   })
 })
 
+describe("rich card bodies", () => {
+  test("task and question keep body-only components", () => {
+    expect(componentSource).toContain("function TaskBody")
+    expect(componentSource).toContain('data-component="task-detail"')
+    expect(componentSource).toContain("function QuestionBody")
+    expect(componentSource).toContain('data-component="question-answers"')
+  })
+
+  test("ToolCard receives the session navigation callback", () => {
+    expect(componentSource).toContain("onOpenSession")
+  })
+})
+
 describe("readPartText", () => {
   test("returns empty string when accum is undefined and part text is undefined", () => {
     expect(readPartText(undefined, { id: "part_1" })).toBe("")

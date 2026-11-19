@@ -36,6 +36,13 @@ describe("ToolCard shell", () => {
     expect(tsx).not.toContain("expanded.defaultOpen")
   })
 
+  test("renders open-subagent actions through a session callback", () => {
+    expect(tsx).toContain("onOpenSession")
+    expect(tsx).toContain("open-subagent")
+    expect(tsx).toContain("sessionID")
+    expect(css).toContain(".mafw-tool-card-detail")
+  })
+
   test("normalises the diff body header to the chat density", () => {
     expect(css).toContain('[data-scope="apply-patch"] h3 > button')
     expect(css).toMatch(/\[data-scope="apply-patch"\] h3 > button\s*\{[^}]*padding-left:\s*0/)

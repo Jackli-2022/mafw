@@ -2,10 +2,12 @@ import { createMemo, createSignal, For, Show, type JSX } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { Collapsible } from "@mafw/ui/collapsible"
 import { TextShimmer } from "@mafw/ui/text-shimmer"
+import { Icon } from "@mafw/ui/icon"
+import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import stripAnsi from "strip-ansi"
 import { Markdown } from "./markdown"
 import type { ToolProps } from "./message-part"
-import type { ResolvedToolPresentation, Section } from "./tool-presentation"
+import type { ResolvedToolPresentation, Section, ToolAction } from "./tool-presentation"
 import "./tool-card.css"
 
 export interface ToolCardProps {
@@ -22,6 +24,8 @@ export interface ToolCardProps {
   renderSections?: (sections: Section[]) => JSX.Element
   /** Context-group mode: collapsed row only, no chevron/body. */
   group?: boolean
+  /** Navigate to a subagent session from an `open-subagent` action. */
+  onOpenSession?: (sessionID: string) => void
 }
 
 function safeHref(href: string | undefined): string | undefined {
@@ -51,6 +55,45 @@ export function ToolCard(input: ToolCardProps) {
   const actions = () => input.presentation.expanded.actions ?? []
   const linkAction = () => actions().find((action) => action.kind === "link" && safeHref(action.href))
   const state = () => (open() ? "expanded" : "collapsed")
+  const internalHref = (href: string | undefined) => (href && href.startsWith("/") ? href : undefined)
+
+  const renderAction = (action: ToolAction) => {
+    if (action.kind === "link") {
+      const href = safeHref(action.href)
+      return href ? (
+        <a class="mafw-tool-card-link" href={href} target="_blank" rel="noopener noreferrer">
+          {action.label ?? href}
+        </a>
+      ) : null
+    }
+    if (action.kind !== "open-subagent" || !action.sessionID) return null
+    const sessionID = action.sessionID
+    const label = action.label ?? sessionID
+    const href = internalHref(action.href)
+    if (href) {
+      return (
+        <a
+          class="mafw-tool-card-link"
+          href={href}
+          onClick={(event) => {
+            if (!input.onOpenSession) return
+            event.preventDefault()
+            input.onOpenSession(sessionID)
+          }}
+        >
+          {label}
+          <Icon name="square-arrow-top-right" size="small" />
+        </a>
+      )
+    }
+    if (!input.onOpenSession) return null
+    return (
+      <ButtonV2 size="small" variant="ghost-muted" onClick={() => input.onOpenSession?.(sessionID)}>
+        {label}
+        <Icon name="square-arrow-top-right" size="small" />
+      </ButtonV2>
+    )
+  }
 
   const defaultRow = () => (
     <div class="mafw-tool-card-row">
@@ -143,16 +186,7 @@ export function ToolCard(input: ToolCardProps) {
             {body()}
             <Show when={actions().length > 0}>
               <div class="mafw-tool-card-actions" data-component="tool-card-actions">
-                <For each={actions()}>
-                  {(action) => {
-                    const href = safeHref(action.href)
-                    return action.kind === "link" && href ? (
-                      <a class="mafw-tool-card-link" href={href} target="_blank" rel="noopener noreferrer">
-                        {action.label ?? href}
-                      </a>
-                    ) : null
-                  }}
-                </For>
+                <For each={actions()}>{(action) => renderAction(action)}</For>
               </div>
             </Show>
           </div>

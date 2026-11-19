@@ -1476,6 +1476,64 @@ export interface ToolProps {
 
 export type ToolComponent = Component<ToolProps>
 
+function TaskBody(props: ToolProps) {
+  const data = useData()
+  const i18n = useI18n()
+  const location = useLocation()
+  const input = () => props.input ?? {}
+  const agent = createMemo(() =>
+    taskAgent(typeof input().agent === "string" ? input().agent : undefined, data.store.agent),
+  )
+  const child = createMemo(
+    () =>
+      (props.metadata.sessionID as string | undefined) ??
+      taskSession(input(), location.pathname, data.store.session, data.store.agent),
+  )
+  const description = () => (typeof input().description === "string" ? input().description : "")
+
+  return (
+    <div data-component="task-detail" class="mafw-tool-card-detail">
+      <div class="mafw-tool-card-detail-row">
+        <span class="mafw-tool-card-detail-label">{i18n.t("ui.tool.agent.default")}</span>
+        <span class="mafw-tool-card-detail-value">{agent().name ?? i18n.t("ui.tool.agent.default")}</span>
+      </div>
+      <Show when={description()}>
+        <p class="mafw-tool-card-detail-text">{description()}</p>
+      </Show>
+      <Show when={child()}>
+        <code class="mafw-tool-card-detail-session">{child()}</code>
+      </Show>
+    </div>
+  )
+}
+
+function QuestionBody(props: ToolProps) {
+  const i18n = useI18n()
+  const questions = createMemo(() => (props.input.questions ?? []) as QuestionInfo[])
+  const answers = createMemo(() => (props.metadata.answers ?? []) as QuestionAnswer[])
+
+  return (
+    <Show
+      when={answers().length > 0}
+      fallback={<div class="mafw-tool-card-empty">{i18n.t("ui.question.review.notAnswered")}</div>}
+    >
+      <div data-component="question-answers">
+        <For each={questions()}>
+          {(q, i) => {
+            const answer = () => answers()[i()] ?? []
+            return (
+              <div data-slot="question-answer-item">
+                <div data-slot="question-text">{q.question}</div>
+                <div data-slot="answer-text">{answer().join(", ") || i18n.t("ui.question.answer.none")}</div>
+              </div>
+            )
+          }}
+        </For>
+      </div>
+    </Show>
+  )
+}
+
 /**
  * Card for a presenter-only registry entry (no legacy `render`). Plugin
  * proxies use it as their fail-open fallback so an overridden diff/rich card
@@ -1634,6 +1692,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
                 onOpenChange={props.onToolOpenChange ? handleToolOpenChange : undefined}
                 renderCollapsed={entry()?.renderCollapsed}
                 renderBody={entry()?.renderBody}
+                onOpenSession={data.navigateToSession ? (id) => data.navigateToSession?.(id) : undefined}
               />
             )}
           </Match>
