@@ -232,6 +232,7 @@ import { DeviceStore } from './mobile/device-store';
 import { PairingService } from './mobile/pairing';
 import { RemoteAccessService } from './mobile/remote-access';
 import { createTunnelTerminator, newTunnelSecret, type TunnelTerminator } from './mobile/tunnel-terminator';
+import { createRelayService, type RelayService } from './mobile/relay-service';
 import { resolveMobileBaseUrl, detectReachableHost } from './mobile/tailscale-url';
 import { normalizeRuntimeEvent } from './runtime/normalize';
 import { UnknownEventTracker } from './runtime/event-telemetry';
@@ -852,6 +853,7 @@ class MafwScheduler {
   /** M0: marker secret + loopback terminator for Quick Tunnel / relay. */
   private tunnelSecret = '';
   private tunnelTerminator?: TunnelTerminator;
+  private relayService?: RelayService;
   private mdnsAdvertiser?: any; // MdnsAdvertiser
   private mafwDir!: string;
   private instanceLock: InstanceLock | null = null;
@@ -4005,6 +4007,8 @@ class MafwScheduler {
     this.remoteAccessService?.destroy();
     void this.tunnelTerminator?.stop();
     this.tunnelTerminator = undefined;
+    void this.relayService?.stop();
+    this.relayService = undefined;
     this.mdnsAdvertiser?.stop();
     // if (this.dashboard) {
     //   this.dashboard.stop();
@@ -5269,6 +5273,34 @@ class MafwScheduler {
         onUrl: (url) => this.pairingService?.setBaseUrlOverride(url),
         onStop: () => this.pairingService?.clearBaseUrlOverride(),
       });
+    }
+
+    // M2: stable relay room (off by default). The gateway keeps an outbound
+    // control WSS; phones reach the room over the relay and terminate TLS here.
+    const relayConfig = (config.raw as any)?.mobile?.relay;
+    if (relayConfig?.enabled) {
+      try {
+        this.relayService = createRelayService({
+          enabled: true,
+          domain: String(relayConfig.roomDomain || ''),
+          controlUrl: String(relayConfig.url || ''),
+          dataDir: path.join(config.resolvePath(), 'mobile', 'relay'),
+          targetPort: this.apiPort,
+          tunnelSecret: this.tunnelSecret,
+          localPort: typeof relayConfig.localPort === 'number' ? relayConfig.localPort : undefined,
+        });
+        const relayStatus = await this.relayService.start();
+        if (relayStatus.roomUrl && relayStatus.fingerprint) {
+          this.pairingService.setRelayEndpoint({
+            url: relayStatus.roomUrl,
+            fingerprint: relayStatus.fingerprint,
+          });
+          log.info(`[Scheduler] relay room ${relayStatus.roomUrl}`);
+        }
+      } catch (err: any) {
+        log.error(`[Scheduler] relay start failed: ${err?.message ?? err}`);
+        this.relayService = undefined;
+      }
     }
 
     // Mobile mDNS discovery (P1: zero-config LAN connectivity)
