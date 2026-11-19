@@ -76,6 +76,18 @@
 - Read 门禁：Session UI **27 suites / 166 pass / 0 fail**，Desktop **795 suites / 4160 pass / 0 fail**，`tsgo` rc 0，`electron-vite build` 通过。
 - 对齐门禁：Session UI **27 suites / 167 pass / 0 fail**，Desktop **795 suites / 4160 pass / 0 fail**，`tsgo` rc 0，`electron-vite build` 通过。
 
+## 2026-11-19 · ToolPresentation Wave 1 + CodeMode 卡
+
+- 设计：`docs/superpowers/specs/2026-11-19-tool-presentation-contract-design.md`；计划：`docs/superpowers/plans/2026-11-19-tool-presentation-contract.md`；CodeMode 数据边界：`docs/research/2026-11-19-codemode-tool-results.md`。
+- 契约：`packages/session-ui/src/components/tool-presentation.ts` 定义 `collapsed` / `expanded` 两态、`resolvePresentation()` 和显式默认（`DEFAULT_EXPANDED.body = "default"`，通用输入/输出）；`partOutputText()` 统一 history `state.content[].text`。
+- 注册面：`ToolRegistry` 新增 `present` / `renderCollapsed` / `renderBody` / `override` / `has` / `names` / `entry`；插件 override 快照并恢复完整 entry，`ToolPartDisplay` 优先尊重 override。
+- 渲染：新增 `ToolCard`（`tool-card.tsx/.css`）——折叠固定一行 28px、标题 11px/550、目标 10.5px、只在箭头前 8px 渐隐、展开正文与标题同一条 6px 左边缘；`data-state="collapsed|expanded"`，pending/running 不禁止展开。
+- 行工具：read/list/glob/grep/webfetch/websearch/bash 接 `present`；`GenericTool` 有 `genericPresentation` 兜底；context 组改用 `resolvePresentation(mode: "context")`，删除 `contextToolTrigger` / `contextToolDetail`。
+- CodeMode：`execute` 接 `presentExecute` + `ExecuteBody`；折叠显示 `Code Mode 执行` + 失败/最近子调用摘要 + `N 次调用`，展开显示子调用行（只展开 input JSON）+ 最终输出；**不渲染 per-call 结果卡**（数据不存在）。
+- 门禁：Session UI **33 suites / 187 pass / 0 fail**（排除既有 `architecture.test.ts`）；Desktop **797 suites / 4164 pass / 0 fail**；两侧 `tsgo` rc 0；`electron-vite build` 通过。
+- 真机：打开 CodeMode 段实测 `Code Mode 执行` 标题 **11px/550**、object **10.5px**、`1 次调用`、1 个子调用行、最终输出存在、子结果卡 **0**；Shell 行同字号，页面无 `.mafw-turn-render-error`。
+- 提交：`638c97e8d`（契约）、`f931f2734`（registry）、`8747e565a`（ToolCard）、`495aa6664`（行工具）、`133f85bc7`（ToolPartDisplay）、`04532270a`（context 组）、`8d9d31689`（plugin override）、`e67a71f4a`（ChatView 11px）、`8f29e679e`（CodeMode 卡）。
+
 ## 已知问题 / 后续
 
 - `packages/session-ui/src/architecture.test.ts` 在当前工作树为既有红：10 个无关文件命中 `opencode|claude` runtime-literal（`markdown.tsx`、`pierre/*`、stories 等），与本次改动无关；本次用单文件/全量排除该守卫作为门禁。
