@@ -13,7 +13,7 @@ import { buildAutomationCardMenu } from "../context-menu/builders/card"
 import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 import { openMenuOnKey } from "../context-menu/menu-key"
 
-export function AutomationsPage() {
+export function AutomationsPage(props: { compact?: boolean } = {}) {
   const [rules, setRules] = createSignal<any[]>([])
   const [loading, setLoading] = createSignal(true)
 
@@ -103,43 +103,44 @@ export function AutomationsPage() {
   }
 
   return (
-    <div>
-      <div style={{ display: "flex", "align-items": "center", "justify-content": "space-between", "margin-bottom": "12px" }}>
-        <PageHeader title="Automations" subtitle="定时与事件驱动任务" />
+    <div class="mafw-automations-page" classList={{ "is-compact": !!props.compact }}>
+      <div class="mafw-automations-header">
+        <Show when={!props.compact}>
+          <PageHeader title="Automations" subtitle="定时与事件驱动任务" />
+        </Show>
         <ButtonV2 variant="outline" size="small" onClick={() => setFormOpen(o => !o)}>{formOpen() ? "收起" : "+ 新建规则"}</ButtonV2>
       </div>
 
       <Show when={formOpen()}>
-        <div class="mafw-card" style={{ display: "flex", "flex-direction": "column", gap: "8px", "margin-bottom": "16px" }}>
-          <div style={{ display: "flex", gap: "8px", "flex-wrap": "wrap" }}>
-            <TextInputV2 style={{ width: "200px" }} value={fId()} onInput={e => setFId(e.currentTarget.value)} placeholder="规则 ID（如 nightly-review）" />
-            <TextInputV2 style={{ width: "200px" }} value={fSchedule()} onInput={e => setFSchedule(e.currentTarget.value)} placeholder="cron（如 0 3 * * *）" />
-            <TextInputV2 style={{ width: "160px" }} value={fTimezone()} onInput={e => setFTimezone(e.currentTarget.value)} placeholder="时区（Asia/Shanghai）" />
+        <div class="mafw-card mafw-automations-form">
+          <div class="mafw-automations-form-row">
+            <TextInputV2 class="mafw-automations-field" value={fId()} onInput={e => setFId(e.currentTarget.value)} placeholder="规则 ID（如 nightly-review）" />
+            <TextInputV2 class="mafw-automations-field" value={fSchedule()} onInput={e => setFSchedule(e.currentTarget.value)} placeholder="cron（如 0 3 * * *）" />
+            <TextInputV2 class="mafw-automations-field mafw-automations-field--short" value={fTimezone()} onInput={e => setFTimezone(e.currentTarget.value)} placeholder="时区（Asia/Shanghai）" />
           </div>
-          <div style={{ display: "flex", gap: "8px", "flex-wrap": "wrap", "align-items": "center" }}>
-            <div style={{ width: "140px" }}>
-              <SelectV2
-                current={fAction() === "goal"
-                  ? { value: "goal", label: "goal（直接建 Goal）" }
-                  : { value: "triage", label: "triage（建议确认）" }}
-                value={(x: { value: string; label: string }) => x.value}
-                label={(x: { value: string; label: string }) => x.label}
-                onSelect={(v: any) => setFAction(v?.value ?? "triage")}
-                options={[
-                  { value: "triage", label: "triage（建议确认）" },
-                  { value: "goal", label: "goal（直接建 Goal）" },
-                ]}
-              />
-            </div>
-            <TextInputV2 style={{ width: "240px" }} value={fTemplate()} onInput={e => setFTemplate(e.currentTarget.value)} placeholder="模板文案（可选）" />
-            <TextInputV2 style={{ width: "180px" }} value={fSkill()} onInput={e => setFSkill(e.currentTarget.value)} placeholder="执行 skill（可选）" />
-            <TextInputV2 style={{ width: "100px" }} value={fMaxLoops()} onInput={e => setFMaxLoops(e.currentTarget.value)} placeholder="maxLoops" />
+          <div class="mafw-automations-form-row">
+            <SelectV2
+              class="mafw-automations-field mafw-automations-field--short"
+              current={fAction() === "goal"
+                ? { value: "goal", label: "goal（直接建 Goal）" }
+                : { value: "triage", label: "triage（建议确认）" }}
+              value={(x: { value: string; label: string }) => x.value}
+              label={(x: { value: string; label: string }) => x.label}
+              onSelect={(v: any) => setFAction(v?.value ?? "triage")}
+              options={[
+                { value: "triage", label: "triage（建议确认）" },
+                { value: "goal", label: "goal（直接建 Goal）" },
+              ]}
+            />
+            <TextInputV2 class="mafw-automations-field mafw-automations-field--wide" value={fTemplate()} onInput={e => setFTemplate(e.currentTarget.value)} placeholder="模板文案（可选）" />
+            <TextInputV2 class="mafw-automations-field mafw-automations-field--short" value={fSkill()} onInput={e => setFSkill(e.currentTarget.value)} placeholder="执行 skill（可选）" />
+            <TextInputV2 class="mafw-automations-field mafw-automations-field--tiny" value={fMaxLoops()} onInput={e => setFMaxLoops(e.currentTarget.value)} placeholder="maxLoops" />
           </div>
-          <div style={{ display: "flex", gap: "8px", "align-items": "center" }}>
+          <div class="mafw-automations-form-row">
             <ButtonV2 variant="contrast" size="small" disabled={!fId().trim() || !fSchedule().trim() || submitting()} onClick={() => void submitDraft()}>
               {submitting() ? "提交中…" : "保存草稿（禁用态）"}
             </ButtonV2>
-            <span style={{ "font-size": "11px", color: "var(--text-base)" }}>草稿保存后需在列表中手动启用；启用前请确认 cron 表达式无误。</span>
+            <span class="mafw-automations-hint">草稿保存后需在列表中手动启用；启用前请确认 cron 表达式无误。</span>
           </div>
         </div>
       </Show>

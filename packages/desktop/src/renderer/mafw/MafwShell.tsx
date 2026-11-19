@@ -885,7 +885,10 @@ export function MafwShell() {
         id: "triage", label: "分诊", hint: "Triage", group: "导航",
         run: () => openPageFocus("triage"),
       },
-      nav("automation", "自动化", "Automations"),
+      {
+        id: "automation", label: "自动化", hint: "Automations", group: "导航",
+        run: () => openPageFocus("automation"),
+      },
       nav("mcp", "MCP 服务器", "MCP"),
       {
         id: "new-session", label: "新建会话", hint: "New session", group: "会话",
@@ -5034,6 +5037,8 @@ export function MafwShell() {
                         return <ApprovalsPage compact permissionCards={pendingPermissionCards} onPermissionReply={permReply} />
                       case "triage":
                         return <TriagePage compact onOpenGoals={openProjectWork} />
+                      case "automation":
+                        return <AutomationsPage compact />
                       default:
                         return <DockEmpty icon={WORKBENCH_PAGE_META[id].icon} text={`${WORKBENCH_PAGE_META[id].label}页待接入`} />
                     }

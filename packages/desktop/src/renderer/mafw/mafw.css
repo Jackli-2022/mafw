@@ -9049,6 +9049,60 @@ html[data-theme="light"] body {
   flex-shrink: 0;
   flex-wrap: wrap;
 }
+.mafw-automations-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.mafw-automations-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.mafw-automations-form-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.mafw-automations-field {
+  width: 200px;
+  min-width: 0;
+}
+.mafw-automations-field--short {
+  width: 160px;
+}
+.mafw-automations-field--tiny {
+  width: 100px;
+}
+.mafw-automations-field--wide {
+  width: 240px;
+}
+.mafw-automations-hint {
+  font-size: 11px;
+  color: var(--text-base);
+}
+.mafw-automations-page.is-compact {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px 24px;
+}
+.mafw-automations-page.is-compact .mafw-automations-header {
+  margin-bottom: 10px;
+}
+.mafw-automations-page.is-compact .mafw-automations-field {
+  width: 100%;
+  max-width: 100%;
+}
+.mafw-automations-page.is-compact .mafw-card {
+  flex-wrap: wrap;
+}
 /* ── end focus stage ───────────────────────────────────────── */
 
 /* ── subject picker ────────────────────────────────────────── */
