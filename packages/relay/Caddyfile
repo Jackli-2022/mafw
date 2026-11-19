@@ -1,0 +1,8 @@
+{
+  auto_https off
+}
+
+https://{$RELAY_DOMAIN}:8443 {
+  tls /certs/fullchain.pem /certs/privkey.pem
+  reverse_proxy relay:8444
+}

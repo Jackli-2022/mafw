@@ -1,6 +1,6 @@
-# @mafw/relay (M1)
+# @mafw/relay (M4 core)
 
-Local relay core for MAFW mobile remote access. It routes by TLS SNI; the host
+Relay core for MAFW mobile remote access. It routes by TLS SNI; the host
 terminates TLS, so the relay only forwards ciphertext.
 
 ## Run locally
@@ -11,6 +11,7 @@ RELAY_LISTEN_HOST=127.0.0.1 \
 RELAY_TLS_PORT=9443 \
 RELAY_CONTROL_PORT=9444 \
 RELAY_ADMIN_PORT=9080 \
+RELAY_DB=/tmp/mafw-relay.db \
 node --experimental-strip-types src/index.ts
 ```
 
@@ -25,6 +26,33 @@ Env:
 | `RELAY_TLS_PORT` | `443` | raw TLS / SNI router |
 | `RELAY_CONTROL_PORT` | `8444` | host control WSS |
 | `RELAY_ADMIN_PORT` | `8080` | health (bind on `RELAY_LISTEN_HOST`) |
+| `RELAY_DB` | empty | SQLite file for durable room claims; empty = in-memory |
 
-M1 is in-memory only: room claims disappear on restart and SQLite persistence
-lands with the deploy milestone. It is not ready for public traffic.
+Room claims survive restarts when `RELAY_DB` points at a writable file.
+
+## Docker
+
+```bash
+cp .env.example .env              # set RELAY_DOMAIN
+# put the control-channel cert at ./certs/{fullchain.pem,privkey.pem}
+docker compose up -d --build
+curl http://127.0.0.1:8080/health
+```
+
+Ports:
+
+- `443` — raw TLS/SNI router (never terminate here).
+- `8444` — host control WSS; expose only through Caddy/your TLS terminator.
+- `8080` — health; the compose file binds it to `127.0.0.1` only.
+
+The bundled `Caddyfile` terminates TLS on `8443` for the control channel and
+proxies to `relay:8444`. The gateway config uses
+`wss://<RELAY_DOMAIN>:8443/host`. `auto_https off` is intentional: the relay
+needs raw 443, so the control cert must be supplied (DNS-01/ACME elsewhere).
+
+## Limits
+
+- M4 local pieces only: no public deployment until the domain is ready.
+- No per-room bandwidth enforcement in the router yet; the `Quota` class is
+  unit-tested but not wired into the byte path.
+- Admin `/health` is metadata-only; no metrics endpoint yet.

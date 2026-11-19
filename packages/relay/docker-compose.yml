@@ -1,0 +1,45 @@
+services:
+  relay:
+    build: .
+    restart: unless-stopped
+    environment:
+      RELAY_DOMAIN: ${RELAY_DOMAIN:?set RELAY_DOMAIN in .env}
+      RELAY_LISTEN_HOST: 0.0.0.0
+      RELAY_TLS_PORT: "443"
+      RELAY_CONTROL_PORT: "8444"
+      RELAY_ADMIN_PORT: "8080"
+      RELAY_DB: /data/relay.db
+    ports:
+      - "443:443"
+      - "8444:8444"
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - relay-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Optional: terminate public TLS for the host control channel (8443).
+  # The gateway uses wss://relay.example.com:8443/host; 443 stays raw TLS
+  # because the relay must read the ClientHello SNI without terminating.
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - relay
+    environment:
+      RELAY_DOMAIN: ${RELAY_DOMAIN:?set RELAY_DOMAIN in .env}
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/certs:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  relay-data:
+  caddy-data:
+  caddy-config:
