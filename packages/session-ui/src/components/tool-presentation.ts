@@ -81,6 +81,8 @@ export interface ToolPresentationContext {
   t: (key: string, params?: Record<string, string | number | boolean>) => string
   sessionHref?: (sessionID: string) => string | undefined
   agent?: (name?: string) => { name: string; color?: string; v2Color?: string } | undefined
+  /** Resolve a task part's child session (metadata first, then title/agent match). */
+  subagentSession?: (input: Record<string, any>) => string | undefined
 }
 
 export type ToolPresenter = (ctx: ToolPresentationContext) => ToolPresentation

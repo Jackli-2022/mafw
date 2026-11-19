@@ -164,6 +164,81 @@ export function presentDiffTool(tool: PresentedDiffTool, ctx: ToolPresentationCo
   }
 }
 
+/** Rich cards migrated to presenters in Wave 3. */
+export const PRESENTED_RICH_TOOLS = ["task", "question", "skill"] as const
+export type PresentedRichTool = (typeof PRESENTED_RICH_TOOLS)[number]
+
+export function presentTask(ctx: ToolPresentationContext): ToolPresentation {
+  const input = ctx.props.input ?? {}
+  const agent = ctx.agent?.(typeof input.agent === "string" ? input.agent : undefined)
+  const title = agent?.name ?? ctx.t("ui.tool.agent.default")
+  const metadataSession =
+    typeof ctx.props.metadata?.sessionID === "string" ? ctx.props.metadata.sessionID : undefined
+  const child = metadataSession ?? ctx.subagentSession?.(input)
+  const description = typeof input.description === "string" && input.description ? input.description : undefined
+
+  return {
+    collapsed: {
+      title,
+      object: description ?? child,
+      meta: ctx.props.metadata?.background === true ? [{ text: "(background)", tone: "muted" }] : undefined,
+    },
+    expanded: {
+      body: "custom",
+      actions: child
+        ? [
+            {
+              kind: "open-subagent",
+              sessionID: child,
+              href: ctx.sessionHref?.(child),
+              label: ctx.t("ui.tool.agent", { type: title }),
+            },
+          ]
+        : undefined,
+    },
+  }
+}
+
+export function presentQuestion(ctx: ToolPresentationContext): ToolPresentation {
+  const input = ctx.props.input ?? {}
+  const questions = Array.isArray(input.questions) ? input.questions : []
+  const answers = Array.isArray(ctx.props.metadata?.answers) ? ctx.props.metadata.answers : []
+  const count = questions.length
+  const answered = answers.length > 0
+  const first = questions[0]?.question
+  const meta =
+    count === 0
+      ? undefined
+      : [
+          {
+            text: answered
+              ? ctx.t("ui.question.subtitle.answered", { count })
+              : `${count} ${ctx.t(count > 1 ? "ui.common.question.other" : "ui.common.question.one")}`,
+          },
+        ]
+
+  return {
+    collapsed: {
+      title: ctx.t("ui.tool.questions"),
+      object: typeof first === "string" ? first : undefined,
+      meta,
+    },
+    expanded: { body: "custom" },
+  }
+}
+
+export function presentSkill(ctx: ToolPresentationContext): ToolPresentation {
+  const input = ctx.props.input ?? {}
+  const raw = typeof input.name === "string" && input.name ? input.name : ctx.t("ui.tool.skill")
+  const output = typeof ctx.props.output === "string" ? ctx.props.output : ""
+  return {
+    collapsed: {
+      title: raw.charAt(0).toUpperCase() + raw.slice(1),
+    },
+    expanded: { body: output.trim() ? "markdown" : "default" },
+  }
+}
+
 /** Unknown MCP tools: one titled row + the generic expanded body. */
 export function genericPresentation(props: ToolProps, ctx: ToolPresentationContext): ToolPresentation {
   const input: any = props.input ?? {}

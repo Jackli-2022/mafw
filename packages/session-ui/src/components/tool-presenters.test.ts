@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import { genericPresentation, presentDiffTool, presentRowTool } from "./tool-presenters"
+import {
+  genericPresentation,
+  presentDiffTool,
+  presentQuestion,
+  presentRowTool,
+  presentSkill,
+  presentTask,
+} from "./tool-presenters"
 import { resolvePresentation, type ToolPresentationContext } from "./tool-presentation"
 
 const ctx = (props: any, mode: "chat" | "context" = "chat"): ToolPresentationContext => ({
@@ -157,5 +164,100 @@ describe("diff tool presentations", () => {
     const empty = diff("apply_patch", { tool: "apply_patch", status: "completed", input: {}, metadata: {} })
     expect(empty.collapsed.object).toBeUndefined()
     expect(empty.collapsed.meta).toBeUndefined()
+  })
+})
+
+const rich = (props: any, overrides: Partial<ToolPresentationContext> = {}): ToolPresentationContext => ({
+  props,
+  directory: "C:/repo",
+  mode: "chat",
+  t: (key: string) => key,
+  agent: (name?: string) => (name ? { name: name[0]!.toUpperCase() + name.slice(1) } : undefined),
+  subagentSession: () => "ses_child",
+  sessionHref: (id: string) => `/session/${id}`,
+  ...overrides,
+})
+
+describe("rich tool presentations", () => {
+  test("task shows the agent, description, background meta, and open action", () => {
+    const c = rich({
+      tool: "task",
+      input: { agent: "build", description: "Fix the bug" },
+      metadata: { background: true },
+      status: "completed",
+    })
+    const out = resolvePresentation(presentTask(c), c)
+    expect(out.collapsed).toMatchObject({
+      title: "Build",
+      object: "Fix the bug",
+      meta: [{ text: "(background)", tone: "muted" }],
+    })
+    expect(out.expanded.body).toBe("custom")
+    expect(out.expanded.actions?.[0]).toMatchObject({
+      kind: "open-subagent",
+      sessionID: "ses_child",
+      href: "/session/ses_child",
+      label: "ui.tool.agent",
+    })
+  })
+
+  test("task prefers metadata.sessionID and omits the action without a child", () => {
+    const withMeta = rich({
+      tool: "task",
+      input: { description: "x" },
+      metadata: { sessionID: "ses_meta" },
+      status: "completed",
+    })
+    expect(resolvePresentation(presentTask(withMeta), withMeta).expanded.actions?.[0]).toMatchObject({
+      sessionID: "ses_meta",
+    })
+
+    const orphan = rich(
+      { tool: "task", input: { description: "x" }, metadata: {}, status: "completed" },
+      { subagentSession: () => undefined },
+    )
+    expect(resolvePresentation(presentTask(orphan), orphan).expanded.actions).toBeUndefined()
+  })
+
+  test("question shows the first question and answered/unanswered meta", () => {
+    const answered = rich({
+      tool: "question",
+      input: { questions: [{ question: "Pick one" }, { question: "Pick two" }] },
+      metadata: { answers: [["A"], ["B"]] },
+      status: "completed",
+    })
+    const out = resolvePresentation(presentQuestion(answered), answered)
+    expect(out.collapsed).toMatchObject({
+      title: "ui.tool.questions",
+      object: "Pick one",
+      meta: [{ text: "ui.question.subtitle.answered" }],
+    })
+    expect(out.expanded.body).toBe("custom")
+
+    const waiting = rich({
+      tool: "question",
+      input: { questions: [{ question: "Pick one" }, { question: "Pick two" }] },
+      metadata: {},
+      status: "completed",
+    })
+    expect(resolvePresentation(presentQuestion(waiting), waiting).collapsed.meta).toEqual([
+      { text: "2 ui.common.question.other" },
+    ])
+  })
+
+  test("skill uses markdown for output and the default body when empty", () => {
+    const c = rich({
+      tool: "skill",
+      input: { name: "office-editing" },
+      metadata: {},
+      status: "completed",
+      output: "Title\nBody",
+    })
+    const out = resolvePresentation(presentSkill(c), c)
+    expect(out.collapsed.title).toBe("Office-editing")
+    expect(out.expanded.body).toBe("markdown")
+
+    const empty = rich({ tool: "skill", input: { name: "office-editing" }, metadata: {}, status: "completed", output: "" })
+    expect(resolvePresentation(presentSkill(empty), empty).expanded.body).toBe("default")
   })
 })
