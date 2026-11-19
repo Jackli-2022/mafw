@@ -131,6 +131,7 @@ describe("rich card bodies", () => {
     expect(componentSource).not.toContain("type ToolInfo")
     expect(componentSource).not.toContain("function agentTitle")
     expect(componentSource).not.toContain("UiI18n")
+    expect(componentSource).not.toContain("IconProps")
   })
 })
 
