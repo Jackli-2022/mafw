@@ -103,6 +103,10 @@
 - Wave 3 门禁：Session UI **47 suites / 235 pass / 0 fail**（Wave 2 基线 42/216，本轮 +5 suites / +19 tests）；Desktop **798 suites / 4172 pass / 0 fail**；两侧 `tsgo` rc 0；`electron-vite build` 通过。
 - Wave 3 真机：`task` 卡折叠行标题 `General`、object `实现召回分段计时`、11px/550、28px；展开体 `task-detail` + `General Agent` 动作；`skill` 卡标题 `Writing-plans`、11px/550、28px，展开体 Markdown 正常；页面无 `.mafw-turn-render-error`。question 卡当前会话无实例，由 presenter/body 单测覆盖。
 - Wave 3 提交：`5aac72edd`（presenters）、`42213d271`（bodies + session action）、`c09ba0f25`（wiring）、`736c84a6b`（timeline task CSS）、`a1bb666d9`（skill name from output header）、`87bc47305`（conformance）、`396c1489b`（task navigation + action hardening）。
+- Wave 4（MAFW family）：`ToolRegistryEntry` 增加 `renderSections`，`ToolPartDisplay` / `ToolPresentationFallback` 转发给 `ToolCard`；新增 `family-present.ts` 的 `presentFamily(spec, ctx)`（title/subtitle/badge → 折叠行，`extract` → `expanded.sections`，空 output → `(无输出)`，extract 异常/空 → `genericSections`）；30 个 spec 注册 `present` + `renderSections`，不再注册 `familyCard` 的 `render`；`FamilyCard` 改为 `ToolCard` 包装，供 `goal-created` legacy fallback 使用。
+- Wave 4 门禁：Session UI **47 suites / 237 pass / 0 fail**；Desktop **802 suites / 4184 pass / 0 fail**；两侧 `tsgo` rc 0；`electron-vite build` 通过。
+- Wave 4 真机：当前会话没有顶层 MAFW family 工具调用（本会话的工具都在 Code Mode 子调用里），family 卡视觉未观测；`family-present` / `shared` / 注册 source tests 覆盖 presenter、fallback 与 30 spec 注册。
+- Wave 4 提交：`106a73577`（renderSections slot）、`f36b0ccf6`（family presenter）、`a0d11a22a`（family registration + FamilyCard）、`91740d47b`（goal-created wiring test）。
 
 ## 已知问题 / 后续
 

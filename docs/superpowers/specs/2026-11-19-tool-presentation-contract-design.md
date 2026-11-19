@@ -318,10 +318,11 @@ ToolRegistry.entry(name)                  // 只读快照，调试/测试用
 
 ### Wave 4 · MAFW family
 
-- desktop `ToolCardSpec` 实现 `present(ctx)`：`extract` → `expanded.sections`，`badge` → `collapsed.meta`，`subtitle` → `collapsed.object`。
-- `renderSections` 继续由 desktop 注入现有 `ToolSections`；session-ui 不接管 `mafw-tool-*` CSS。
+- desktop 用 `presentFamily(spec, ctx)` 统一生成 family 折叠行：`spec.title` → `collapsed.title`，`spec.subtitle` → `collapsed.object`，`spec.badge` → `collapsed.meta`，`spec.extract` → `expanded.sections`。
+- `ToolRegistryEntry` 增加 `renderSections`，由 desktop 注册 `familyRenderSections`（现有 `ToolSections`）；session-ui 只需把它传给 `ToolCard`，不接管 `mafw-tool-*` CSS。
+- 30 个 spec 全部注册 `present` + `renderSections`，不再注册 `familyCard` 的 `render`；`familyCard` 改为 `ToolCard` 包装（供 `goal-created` 的 legacy fallback 使用），不再重复构造 trigger。
 - 8 个自绘卡（search/add/deltas/rule/python/execute/goal-created）保留 `render` 完整卡；它们没有 `present` 时走 legacy 路径。
-- 30 个 spec 全部接 `present` 后，删除 `familyCard` 的重复 trigger 构建。
+- `ToolPresentationFallback` 也要传 `renderSections`，插件 override 回落时 family 内容不丢。
 
 ### Wave 5 · 清理
 
