@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { PRESENTED_ROW_TOOLS, presentRowTool } from "./tool-presenters"
+import { PRESENTED_DIFF_TOOLS, PRESENTED_ROW_TOOLS, presentDiffTool, presentRowTool } from "./tool-presenters"
 import { resolvePresentation, type ToolPresentationContext } from "./tool-presentation"
 
 const base: ToolPresentationContext = {
@@ -22,6 +22,25 @@ describe("row presenter conformance", () => {
       expect(out.collapsed.title).toBeTruthy()
       expect(out.collapsed.status).toBeTruthy()
       expect(out.expanded.body ?? out.expanded.sections).toBeTruthy()
+    }
+  })
+})
+
+describe("diff presenter conformance", () => {
+  test("every diff tool resolves both states", () => {
+    for (const name of PRESENTED_DIFF_TOOLS) {
+      const ctx = {
+        ...base,
+        props: {
+          ...base.props,
+          tool: name,
+          metadata: { files: [{ file: "C:/repo/a.ts", additions: 1, deletions: 1 }] },
+        },
+      }
+      const out = resolvePresentation(presentDiffTool(name, ctx), ctx)
+      expect(out.collapsed.title).toBeTruthy()
+      expect(out.collapsed.status).toBeTruthy()
+      expect(out.expanded.body).toBe("custom")
     }
   })
 })
