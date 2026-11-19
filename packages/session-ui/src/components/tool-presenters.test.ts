@@ -105,7 +105,9 @@ describe("diff tool presentations", () => {
       tool: "apply_patch",
       status: "completed",
       input: {},
-      metadata: { files: [{ file: "C:/repo/a.ts", additions: 2, deletions: 3, status: "modified" }] },
+      metadata: {
+        files: [{ file: "C:/repo/a.ts", patch: "@@ -1 +1 @@", additions: 2, deletions: 3, status: "modified" }],
+      },
     })
     expect(single.collapsed.object).toBe("a.ts")
     expect(single.collapsed.meta).toEqual([{ text: "+2", tone: "ok" }, { text: "-3", tone: "err" }])
@@ -116,8 +118,8 @@ describe("diff tool presentations", () => {
       input: {},
       metadata: {
         files: [
-          { file: "C:/repo/a.ts", additions: 2, deletions: 3 },
-          { file: "C:/repo/b.ts", additions: 3, deletions: 1, status: "added" },
+          { file: "C:/repo/a.ts", patch: "@@ -1 +1 @@", additions: 2, deletions: 3 },
+          { file: "C:/repo/b.ts", before: "", after: "b\n", additions: 3, deletions: 1, status: "added" },
         ],
       },
     })
@@ -125,12 +127,30 @@ describe("diff tool presentations", () => {
     expect(multi.collapsed.meta).toEqual([{ text: "+5", tone: "ok" }, { text: "-4", tone: "err" }])
   })
 
+  test("apply_patch ignores metadata rows without diff content", () => {
+    const out = diff("apply_patch", {
+      tool: "apply_patch",
+      status: "completed",
+      input: {},
+      metadata: {
+        files: [
+          { file: "C:/repo/a.ts", additions: 2, deletions: 0, patch: "@@ -1 +1 @@" },
+          { file: "C:/repo/b.ts" },
+        ],
+      },
+    })
+    expect(out.collapsed.object).toBe("a.ts")
+    expect(out.collapsed.meta).toEqual([{ text: "+2", tone: "ok" }])
+  })
+
   test("deleted single file only shows deletions; empty patch has no object", () => {
     const deleted = diff("apply_patch", {
       tool: "apply_patch",
       status: "completed",
       input: {},
-      metadata: { files: [{ file: "C:/repo/gone.ts", additions: 0, deletions: 3, status: "deleted" }] },
+      metadata: {
+        files: [{ file: "C:/repo/gone.ts", before: "gone\n", after: "", additions: 0, deletions: 3, status: "deleted" }],
+      },
     })
     expect(deleted.collapsed.meta).toEqual([{ text: "-3", tone: "err" }])
 

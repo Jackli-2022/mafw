@@ -19,15 +19,27 @@ function viewStatus(value: unknown): ViewDiffStatus {
   return "modified"
 }
 
+/** A metadata row becomes an accordion only when it carries diff content. */
+export function hasPatchContent(raw: unknown): boolean {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false
+  const value = raw as Record<string, unknown>
+  return (
+    typeof value.patch === "string" ||
+    value.before !== undefined ||
+    value.after !== undefined ||
+    typeof value.movePath === "string"
+  )
+}
+
 export function patchFile(raw: unknown): ApplyPatchFile | undefined {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return
   const value = raw as Record<string, unknown>
   const file = typeof value.file === "string" ? value.file : undefined
   if (!file) return
+  if (!hasPatchContent(value)) return
   const patch = typeof value.patch === "string" ? value.patch : undefined
   const before = typeof value.before === "string" ? value.before : undefined
   const after = typeof value.after === "string" ? value.after : undefined
-  if (!patch && before === undefined && after === undefined && typeof value.movePath !== "string") return
   const additions = typeof value.additions === "number" ? value.additions : 0
   const deletions = typeof value.deletions === "number" ? value.deletions : 0
   return {

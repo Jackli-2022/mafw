@@ -2,6 +2,7 @@ import type { ToolProps } from "./message-part"
 import type { ToolPresentation, ToolPresentationContext } from "./tool-presentation"
 import { getDirectory, getFilename, relativePath } from "../util/path"
 import { canonicalMetadataFiles, contentLineCount, diffMeta } from "./diff-tool-model"
+import { hasPatchContent } from "./apply-patch-file"
 
 function readPathInput(input: any): string | undefined {
   const value = input?.filePath ?? input?.path ?? input?.file_path
@@ -119,7 +120,8 @@ export type PresentedDiffTool = (typeof PRESENTED_DIFF_TOOLS)[number]
 /** Diff cards keep their existing bodies via `renderBody`; the row is unified. */
 export function presentDiffTool(tool: PresentedDiffTool, ctx: ToolPresentationContext): ToolPresentation {
   const input = ctx.props.input ?? {}
-  const files = canonicalMetadataFiles(ctx.props.metadata)
+  const metadataFiles = canonicalMetadataFiles(ctx.props.metadata)
+  const files = tool === "apply_patch" ? metadataFiles.filter(hasPatchContent) : metadataFiles
   const expanded = { body: "custom" as const }
 
   if (tool === "write") {
