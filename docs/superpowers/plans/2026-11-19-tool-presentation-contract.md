@@ -211,6 +211,7 @@ Run: single-file test command; expected FAIL (files missing).
 - Body selection: `renderBody` → `expanded.sections` via `renderSections` → built-in `body` (`default`/`markdown`/`terminal`/`json`) → `DEFAULT_EXPANDED`.
 - Default body: input JSON + output text (`partOutputText` or `props.output`).
 - Root `data-state="collapsed" | "expanded"`; default collapsed; `defaultOpen` opt-in.
+- **Do not block expansion while pending/running**; status only drives shimmer/meta. CodeMode needs an open body while child calls are still running.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
@@ -407,45 +408,65 @@ git commit -m "feat(session-ui): unify ChatView tool cards at 11px"
 
 ---
 
-### Task 9 (follow-up, not blocking Wave 1): CodeMode `execute` adapter
+### Task 9: CodeMode `execute` card (rich body)
 
 **Files:**
 - Modify: `packages/desktop/src/renderer/mafw/components/tool-cards/execute.tsx`
 - Modify: `packages/desktop/src/renderer/mafw/components/tool-cards/execute-model.ts`
 - Test: `packages/desktop/src/renderer/mafw/components/tool-cards/execute-model.test.ts`
 - Research: `docs/research/2026-11-19-codemode-tool-results.md`
+- Spec: `docs/superpowers/specs/2026-11-19-tool-presentation-contract-design.md` §4.4
 
 **Interfaces:**
-- Consumes: `present` / `renderBody` escape hatch from Task 2/3.
-- Produces: `execute` collapsed fields (title `Code Mode 执行`, meta `N 次调用`, failed marker) and expanded body = current `MafwExecuteCard` body.
+- Consumes: `present`, `renderBody` from Task 2/3; `partOutputText` from Task 1/5.
+- Produces: `execute` entry `{ name: "execute", present, renderBody }`.
+- Collapsed: `{ title: "Code Mode 执行", object: executeHeaderSubtitle(calls), meta: [{ text: "N 次调用" }, ...failed], status }`.
+- Expanded: `{ body: "custom", defaultOpen: true }`; `renderBody = ExecuteBody` (child rows + final output).
 - Data boundary: `metadata.toolCalls[]` has **name / status / input only**; no per-call output. Only `state.output` (or history `partOutputText`) is available.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing tests**
 
-Assert `executeCalls` keeps dotted/bare names, drops malformed entries, and **never** returns an `output` field. Add a source assertion that the `execute` entry has `present` and `renderBody`.
+In `execute-model.test.ts`:
+- `executeCalls` keeps dotted/bare names, drops malformed entries, and **never** returns an `output` field.
+- `executeHeaderSubtitle` prefers the failed call, else the latest call.
+- `executeCollapsed` (new helper) returns title `Code Mode 执行`, object = header subtitle, meta `N 次调用` + `有失败`, status from props.
+- Source assertion: `execute.tsx` registers `present` and `renderBody`; `present` returns `expanded.defaultOpen === true`; `renderBody` is `ExecuteBody`.
 
 - [ ] **Step 2: Run and verify fail**
 
 Run: `cd packages/desktop && node --conditions=browser --import tsx --import ../../packages/test-shim/register.mjs --test src/renderer/mafw/components/tool-cards/execute-model.test.ts`
-Expected: FAIL on the new source assertion.
+Expected: FAIL on the new helpers/assertions.
 
-- [ ] **Step 3: Implement**
+- [ ] **Step 3: Implement the split**
 
-Split `MafwExecuteCard` into `executeCollapsed` (title/meta) + `ExecuteBody` (current `BasicTool` children). Register `{ name: "execute", present, renderBody }`. Keep `defaultOpen: true`, `defer: false`. Do not invent child outputs.
+- `executeCollapsed(props)` builds the collapsed fields from `executeCalls` + `executeHeaderSubtitle`.
+- `ExecuteBody(props)` is the current `mafw-tool-box` body:
+  - child rows with status glyph, tool icon/label, args; click expands **input JSON only**;
+  - final output via `executeOutputView` + `genericSections`; `partOutputText` for history;
+  - empty/running/failure states;
+  - **no per-child output** and no result cards.
+- `present` returns `{ collapsed: executeCollapsed(props), expanded: { body: "custom", defaultOpen: true } }`.
+- `ToolRegistry.register({ name: "execute", present, renderBody: ExecuteBody })`.
+- `ToolCard` must allow open while pending; if Task 3 didn't cover it, add the pending test there, not in this task.
 
 - [ ] **Step 4: Run and verify pass**
 
 Same test; expected PASS.
 
-- [ ] **Step 5: Document the boundary**
+- [ ] **Step 5: Real-machine check**
 
-In the plan/spec note: child calls expose name/status/input only; per-call output is not available. If per-call results are required, use `codemode: false` or an upstream opencode change.
+Use a CodeMode turn with at least two child calls (one running, one completed); verify:
+- collapsed row is one line at 11px with `N 次调用`;
+- expanded body shows child rows + final output;
+- clicking a child row shows input JSON only;
+- no per-call result card is rendered;
+- failure child row is red and the final error text appears.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add packages/desktop/src/renderer/mafw/components/tool-cards/execute.tsx packages/desktop/src/renderer/mafw/components/tool-cards/execute-model.ts packages/desktop/src/renderer/mafw/components/tool-cards/execute-model.test.ts
-git commit -m "feat(desktop): adopt the tool presentation contract for CodeMode"
+git commit -m "feat(desktop): render CodeMode as a rich tool card"
 ```
 
 ---
