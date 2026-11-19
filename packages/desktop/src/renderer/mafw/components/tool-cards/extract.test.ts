@@ -8,6 +8,9 @@ describe("helpers", () => {
     expect(parseOut(undefined)).toBeUndefined()
     expect(parseOut("")).toBeUndefined()
   })
+  test("genericSections handles null without throwing", () => {
+    expect(genericSections("null")).toEqual([{ kind: "text", text: "null" }])
+  })
   test("trunc：超长截断加省略号", () => {
     expect(trunc("abcdef", 3)).toBe("abc…")
     expect(trunc("ab", 3)).toBe("ab")

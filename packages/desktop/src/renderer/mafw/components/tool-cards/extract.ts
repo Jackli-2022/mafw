@@ -1,21 +1,5 @@
-export type Section =
-  | { kind: "kv"; rows: Array<[string, string]> }
-  | { kind: "tags"; items: string[] }
-  | { kind: "text"; text: string; tone?: "muted" | "warn" | "error" }
-  | { kind: "code"; text: string; language?: string }
-  | { kind: "list"; items: ListItem[] }
-
-export interface ListItem {
-  title: string
-  subtitle?: string
-  badge?: string
-  badgeTone?: "ok" | "warn" | "err" | "muted" | "accent"
-}
-
-export interface ToolBadge {
-  text: string
-  tone?: "ok" | "warn" | "err" | "muted"
-}
+import type { ListItem, Section, ToolBadge } from "@mafw/session-ui/tool-presentation"
+export type { ListItem, Section, ToolBadge } from "@mafw/session-ui/tool-presentation"
 
 export interface ToolCardSpec {
   icon: string
@@ -69,7 +53,7 @@ export function genericSections(output: string | undefined): Section[] {
     if (p.length === 0) return [{ kind: "text", text: "（空）", tone: "muted" }]
     return [{ kind: "list", items: p.map((it) => ({ title: summarize(it) })) }]
   }
-  if (typeof p === "object") {
+  if (p !== null && typeof p === "object") {
     const rows = Object.entries(p as Record<string, unknown>)
       .filter(([, v]) => v !== undefined && v !== null && v !== "")
       .map(([k, v]) => [k, summarize(v)] as [string, string])

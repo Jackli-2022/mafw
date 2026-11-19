@@ -1,11 +1,7 @@
 import { For, Show, createMemo, type Component } from "solid-js"
 import { ToolCard } from "@mafw/session-ui/tool-card"
 import type { ToolProps } from "@mafw/session-ui/message-part"
-import {
-  resolvePresentation,
-  type Section as ToolSection,
-  type ToolPresentationContext,
-} from "@mafw/session-ui/tool-presentation"
+import { resolvePresentation, type ToolPresentationContext } from "@mafw/session-ui/tool-presentation"
 import { presentFamily } from "./family-present"
 import type { ListItem, Section, ToolCardSpec } from "./extract"
 
@@ -96,13 +92,22 @@ export function ToolSections(props: { sections: Section[] }) {
 }
 
 /** Desktop-injected `ToolRegistryEntry.renderSections` for family cards. */
-export function familyRenderSections(sections: ToolSection[]) {
-  return <ToolSections sections={sections as unknown as Section[]} />
+export function familyRenderSections(sections: Section[]) {
+  return <ToolSections sections={sections} />
 }
 
 /** Presenter-driven family card; also the `goal-created` legacy fallback. */
 export const FamilyCard: Component<ToolProps & { spec: ToolCardSpec }> = (props) => {
   const context = (): ToolPresentationContext => ({ props, mode: "chat", t: (key) => key })
   const presentation = createMemo(() => resolvePresentation(presentFamily(props.spec, context()), context()))
-  return <ToolCard props={props} presentation={presentation()} renderSections={familyRenderSections} />
+  return (
+    <ToolCard
+      props={props}
+      presentation={presentation()}
+      defaultOpen={props.defaultOpen}
+      open={props.open}
+      onOpenChange={props.onOpenChange}
+      renderSections={familyRenderSections}
+    />
+  )
 }

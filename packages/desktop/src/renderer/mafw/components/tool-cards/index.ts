@@ -1,6 +1,5 @@
 import { ToolRegistry, type ToolComponent, type ToolProps } from "@mafw/session-ui/message-part"
-import { TOOL_SPECS, type ToolCardSpec } from "./extract"
-import { presentFamily } from "./family-present"
+import { registerFamilyCards } from "./family-register"
 import { familyRenderSections } from "./shared"
 import { MafwSearchCard } from "./memory-read"
 import { MafwAddMemoryCard } from "./memory-write"
@@ -20,20 +19,8 @@ function registerAliased(name: string, render: ToolComponent) {
   for (const key of aliasKeys(name)) ToolRegistry.register({ name: key, render })
 }
 
-function registerFamily(name: string, spec: ToolCardSpec) {
-  for (const key of aliasKeys(name)) {
-    ToolRegistry.register({
-      name: key,
-      present: (ctx) => presentFamily(spec, ctx),
-      renderSections: familyRenderSections,
-    })
-  }
-}
-
 export function registerMafwToolCards() {
-  for (const [name, spec] of Object.entries(TOOL_SPECS)) {
-    registerFamily(name, spec)
-  }
+  registerFamilyCards(ToolRegistry, familyRenderSections)
   ToolRegistry.register({
     name: "execute",
     present: presentExecute,

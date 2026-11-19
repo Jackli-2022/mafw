@@ -8,6 +8,8 @@ describe("family card shell", () => {
     expect(src).toContain("ToolCard")
     expect(src).toContain("familyRenderSections")
     expect(src).toContain("presentFamily")
+    expect(src).toContain("presentation={presentation()}")
+    expect(src).toContain("renderSections={familyRenderSections}")
     expect(src).not.toContain("BasicTool")
     expect(src).not.toContain("trigger={{")
   })

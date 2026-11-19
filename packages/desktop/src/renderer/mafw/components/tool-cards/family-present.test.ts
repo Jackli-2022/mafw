@@ -52,4 +52,20 @@ describe("family presenter", () => {
       [],
     )
   })
+
+  test("filters empty sections and falls back to generic JSON", () => {
+    expect(familySections(spec(() => [{ kind: "list", items: [] }]), props({ output: '{"goals":[]}' }))).toEqual([
+      { kind: "kv", rows: [["goals", "[]"]] },
+    ])
+  })
+
+  test("whitespace output becomes the empty marker", () => {
+    expect(familySections(spec(() => [{ kind: "code", text: "   " }]), props({ output: "   " }))).toEqual([
+      { kind: "text", text: "(无输出)", tone: "muted" },
+    ])
+  })
+
+  test("null output does not throw through the generic fallback", () => {
+    expect(familySections(spec(() => []), props({ output: "null" }))).toEqual([{ kind: "text", text: "null" }])
+  })
 })
