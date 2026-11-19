@@ -20,7 +20,7 @@ import { computePopoverPlacement, type PopoverAnchor } from "../../popover-place
 export function PopoverShell(props: {
   open: boolean
   trigger: HTMLElement | null
-  anchor: "tr" | "bl" | "below-center"
+  anchor: PopoverAnchor
   onClose: () => void
   onHoverEnter?: () => void
   onHoverExit?: () => void

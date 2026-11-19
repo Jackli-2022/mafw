@@ -93,6 +93,18 @@ describe("popover placement", () => {
     expect(flipped.top).toBe(600 - 8 - 300)
   })
 
+  test("below-start keeps the popover left edge on the trigger, not over the rail", () => {
+    const p = computePopoverPlacement({
+      trigger: { top: 120, bottom: 160, left: 500, right: 700, width: 200 },
+      viewport: viewport(1200, 800),
+      anchor: "below-start",
+      width: 320,
+      height: 220,
+    })
+    expect(p.top).toBe(162)
+    expect(p.left).toBe(500)
+  })
+
   test("PopoverShell re-anchors when content height changes", () => {
     const src = readFileSync(
       new URL("./components/pickers/PopoverShell.tsx", import.meta.url),

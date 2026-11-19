@@ -9133,7 +9133,10 @@ html[data-theme="light"] body {
 .mafw-comments-pop-actions { padding: 6px 10px 8px; border-top: 1px solid var(--border-subtle); }
 .mafw-annot-rail-action { margin-left: auto; }
 
-/* ── Lead memory receipt (recall -> quiet turn footer + hover card) ── */
+/* ── Lead memory receipt (recall -> quiet turn line + click-to-peek card) ── */
+.mafw-memory-receipt-anchor {
+  display: inline-flex;
+}
 .mafw-memory-receipt-trigger[data-component="button-v2"] {
   height: 20px;
   min-height: 0;
@@ -9163,16 +9166,20 @@ html[data-theme="light"] body {
 .mafw-memory-receipt-chev {
   color: var(--text-4);
   font-size: 11px;
+  transition: transform var(--dur-1) var(--ease);
+}
+.mafw-memory-receipt-chev.open {
+  transform: rotate(90deg);
+}
+.mafw-memory-receipt-pop {
+  max-height: 400px;
 }
 .mafw-memory-receipt-card {
-  width: 340px;
-  max-height: 360px;
-  overflow: auto;
+  width: 100%;
+  max-height: 400px;
+  overflow-y: auto;
   padding: 0;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-lg);
-  background: var(--bg-float);
-  box-shadow: var(--shadow-float);
+  background: transparent;
   color: var(--text-1);
 }
 .mafw-memory-receipt-head {

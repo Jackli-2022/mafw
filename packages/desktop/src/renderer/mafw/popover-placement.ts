@@ -5,7 +5,7 @@
  * clamp 到视口。高度取内容真实高度（受 CSS max-height 限制），因此内容长高
  * （如 Thinking 子菜单展开）重新计算时 popover 会保持贴边而不是长出视口。
  */
-export type PopoverAnchor = "tr" | "bl" | "below-center"
+export type PopoverAnchor = "tr" | "bl" | "below-center" | "below-start"
 
 export interface PopoverPlacementInput {
   trigger: { top: number; bottom: number; left: number; right: number; width: number }
@@ -36,13 +36,15 @@ export function computePopoverPlacement(input: PopoverPlacementInput): PopoverPl
   const spaceBelow = vh - trigger.bottom - GAP
   let top: number
   let left: number
-  if (anchor === "below-center") {
+  if (anchor === "below-center" || anchor === "below-start") {
     if (spaceBelow >= h) {
       top = trigger.bottom + 2
     } else {
       top = Math.max(8, trigger.top - GAP - h)
     }
-    left = trigger.left + trigger.width / 2 - W / 2
+    left = anchor === "below-center"
+      ? trigger.left + trigger.width / 2 - W / 2
+      : trigger.left
   } else {
     if (spaceAbove >= h) {
       top = trigger.top - GAP - h
