@@ -1,6 +1,7 @@
 import type { ToolProps } from "./message-part"
 import type { ToolPresentation, ToolPresentationContext } from "./tool-presentation"
 import { getDirectory, getFilename, relativePath } from "../util/path"
+import { canonicalMetadataFiles, contentLineCount, diffMeta } from "./diff-tool-model"
 
 function readPathInput(input: any): string | undefined {
   const value = input?.filePath ?? input?.path ?? input?.file_path
@@ -108,6 +109,56 @@ export function presentRowTool(tool: string, ctx: ToolPresentationContext): Tool
       }
     default:
       return { collapsed: { title: tool }, expanded: { body: "default" } }
+  }
+}
+
+/** Diff tools migrated to presenters in Wave 2. */
+export const PRESENTED_DIFF_TOOLS = ["edit", "write", "apply_patch"] as const
+export type PresentedDiffTool = (typeof PRESENTED_DIFF_TOOLS)[number]
+
+/** Diff cards keep their existing bodies via `renderBody`; the row is unified. */
+export function presentDiffTool(tool: PresentedDiffTool, ctx: ToolPresentationContext): ToolPresentation {
+  const input = ctx.props.input ?? {}
+  const files = canonicalMetadataFiles(ctx.props.metadata)
+  const expanded = { body: "custom" as const }
+
+  if (tool === "write") {
+    const path = readPathInput(input) ?? files[0]?.file
+    const additions = files[0]?.additions ?? contentLineCount(input.content)
+    return {
+      collapsed: {
+        title: ctx.t("ui.messagePart.title.write"),
+        object: pathLabel(path, ctx),
+        meta: diffMeta(additions, files[0]?.deletions ?? 0),
+      },
+      expanded,
+    }
+  }
+
+  if (tool === "apply_patch") {
+    if (files.length === 0) {
+      return { collapsed: { title: ctx.t("ui.tool.patch") }, expanded }
+    }
+    const additions = files.reduce((total, file) => total + (file.additions ?? 0), 0)
+    const deletions = files.reduce((total, file) => total + (file.deletions ?? 0), 0)
+    return {
+      collapsed: {
+        title: ctx.t("ui.tool.patch"),
+        object: files.length === 1 ? pathLabel(files[0]!.file, ctx) : `${files.length} ${ctx.t("ui.common.file.other")}`,
+        meta: diffMeta(additions, deletions),
+      },
+      expanded,
+    }
+  }
+
+  const path = files[0]?.file ?? readPathInput(input)
+  return {
+    collapsed: {
+      title: ctx.t("ui.messagePart.title.edit"),
+      object: pathLabel(path, ctx),
+      meta: diffMeta(files[0]?.additions ?? 0, files[0]?.deletions ?? 0),
+    },
+    expanded,
   }
 }
 

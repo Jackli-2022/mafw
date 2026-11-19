@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { genericPresentation, presentRowTool } from "./tool-presenters"
+import { genericPresentation, presentDiffTool, presentRowTool } from "./tool-presenters"
 import { resolvePresentation, type ToolPresentationContext } from "./tool-presentation"
 
 const ctx = (props: any, mode: "chat" | "context" = "chat"): ToolPresentationContext => ({
@@ -62,5 +62,80 @@ describe("row tool presentations", () => {
     expect(out.collapsed.title).toBe("mcp_x")
     expect(out.collapsed.object).toBe("hi")
     expect(out.expanded.body).toBe("default")
+  })
+})
+
+const diff = (tool: string, props: any) => {
+  const c = ctx(props)
+  return resolvePresentation(presentDiffTool(tool as any, c), c)
+}
+
+describe("diff tool presentations", () => {
+  test("edit shows the relative path and ± stats", () => {
+    const out = diff("edit", {
+      tool: "edit",
+      status: "completed",
+      input: { filePath: "C:/repo/src/a.ts" },
+      metadata: { files: [{ file: "C:/repo/src/a.ts", additions: 4, deletions: 1 }] },
+    })
+    expect(out.collapsed).toMatchObject({ title: "ui.messagePart.title.edit", object: "src/a.ts" })
+    expect(out.collapsed.meta).toEqual([{ text: "+4", tone: "ok" }, { text: "-1", tone: "err" }])
+    expect(out.expanded.body).toBe("custom")
+  })
+
+  test("streaming edit falls back to the input path with no stats", () => {
+    const out = diff("edit", { tool: "edit", status: "running", input: { filePath: "C:/repo/src/a.ts" }, metadata: {} })
+    expect(out.collapsed.object).toBe("src/a.ts")
+    expect(out.collapsed.meta).toBeUndefined()
+  })
+
+  test("write derives additions from content when metadata is absent", () => {
+    const out = diff("write", {
+      tool: "write",
+      status: "completed",
+      input: { filePath: "C:/repo/new.ts", content: "a\nb\n" },
+      metadata: {},
+    })
+    expect(out.collapsed.object).toBe("new.ts")
+    expect(out.collapsed.meta).toEqual([{ text: "+2", tone: "ok" }])
+  })
+
+  test("single-file apply_patch shows the path; multi-file shows the count and totals", () => {
+    const single = diff("apply_patch", {
+      tool: "apply_patch",
+      status: "completed",
+      input: {},
+      metadata: { files: [{ file: "C:/repo/a.ts", additions: 2, deletions: 3, status: "modified" }] },
+    })
+    expect(single.collapsed.object).toBe("a.ts")
+    expect(single.collapsed.meta).toEqual([{ text: "+2", tone: "ok" }, { text: "-3", tone: "err" }])
+
+    const multi = diff("apply_patch", {
+      tool: "apply_patch",
+      status: "completed",
+      input: {},
+      metadata: {
+        files: [
+          { file: "C:/repo/a.ts", additions: 2, deletions: 3 },
+          { file: "C:/repo/b.ts", additions: 3, deletions: 1, status: "added" },
+        ],
+      },
+    })
+    expect(multi.collapsed.object).toBe("2 ui.common.file.other")
+    expect(multi.collapsed.meta).toEqual([{ text: "+5", tone: "ok" }, { text: "-4", tone: "err" }])
+  })
+
+  test("deleted single file only shows deletions; empty patch has no object", () => {
+    const deleted = diff("apply_patch", {
+      tool: "apply_patch",
+      status: "completed",
+      input: {},
+      metadata: { files: [{ file: "C:/repo/gone.ts", additions: 0, deletions: 3, status: "deleted" }] },
+    })
+    expect(deleted.collapsed.meta).toEqual([{ text: "-3", tone: "err" }])
+
+    const empty = diff("apply_patch", { tool: "apply_patch", status: "completed", input: {}, metadata: {} })
+    expect(empty.collapsed.object).toBeUndefined()
+    expect(empty.collapsed.meta).toBeUndefined()
   })
 })
