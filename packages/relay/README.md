@@ -54,6 +54,6 @@ needs raw 443, so the control cert must be supplied (DNS-01/ACME elsewhere).
 
 - M4 local pieces only: no public deployment until the domain is ready.
 - `Quota` is wired into room creation, router stream admission/release and
-  both byte directions. Per-room 2Mbps is enforced; the global 4Mbps cap is
-  not wired yet. There is no `/metrics` endpoint.
+  both byte directions. Per-room 2Mbps and the global 4Mbps cap are enforced.
+- Admin `GET /metrics` exposes room/stream gauges (Prometheus text).
 - Admin `/health` is metadata-only.

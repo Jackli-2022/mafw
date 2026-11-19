@@ -69,6 +69,7 @@ curl http://127.0.0.1:8080/health
 - `443` 是裸 TLS/SNI 路由，**不能**让 Caddy 终止；`8443` 是 control WSS（Caddy → `relay:8444`）；
   `8080` health 只绑 loopback。
 - `RELAY_DB=/data/relay.db` 持久化 room claim；不要删 volume，否则所有手机会要求重新配对。
+- `curl http://127.0.0.1:8080/metrics` 查看 rooms/streams/room creations 指标。
 - gateway 侧：
   ```yaml
   mobile:

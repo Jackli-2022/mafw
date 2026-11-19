@@ -2,7 +2,7 @@
 
 - **分支**：`main`
 - **提交**：`6bd79608a`（SQLite room claim）、`687161098`（Docker/compose/Caddy）、
-  `814e6e04c`（quota 接入）、`069aa1685`（room 创建 quota）
+  `814e6e04c`（quota 接入）、`069aa1685`（room 创建 quota）、`ea57c0839`（全局带宽 + metrics）
 - **范围**：`packages/relay` 的持久化、容器/反代配置、运维文档；未部署 443
 - **前置**：M1 core、M2 gateway client、M3 mobile 双端点
 
@@ -19,14 +19,17 @@
 - **Quota 接入**：首连创建 room 前走 `allowRoom(ip)`；router 在 SNI/room 校验后调用
   `allowStream`，连接关闭 `releaseStream`；握手/client→host 字节走 `allowBytes`；
   HostHub 的 host→phone DATA 也走 `allowBytes`，超限关闭该 stream。
+  `allowBytes` 同时检查每 room 2Mbps 与全局 4Mbps。
+- **Metrics**：admin `GET /metrics` 输出 `relay_rooms_total`、`relay_rooms_online`、
+  `relay_room_creations_today`、`relay_streams_active`（Prometheus text）。
 - **Caddy**：`Caddyfile` 在 8443 终止 control TLS 并反代 `relay:8444`，`auto_https off`
   （443 必须留给裸 TLS；证书由 operator 提供）。
 - **文档**：`packages/relay/README.md`、`docs/guides/operations.md` 自建 relay 段。
 
 ## 验证
 
-- `npm run test -w @mafw/relay` → **33/33 pass**（含 SQLite 重启恢复、server 重启 claim、
-  首连 claim、room/stream/byte quota、SNI/router）。
+- `npm run test -w @mafw/relay` → **37/37 pass**（含 SQLite 重启恢复、server 重启 claim、
+  首连 claim、room/stream/room+global byte quota、metrics、SNI/router）。
 - `npm run build -w @mafw/relay` rc=0。
 - `npm run test:e2e -w @mafw/relay` → **PASS**（M1 relay + M2 gateway + 真实 TLS/指纹）。
 - 本机**没有 Docker**，Dockerfile/compose/Caddy 未实际构建；仅静态配置，部署前需在服务器
@@ -34,7 +37,7 @@
 
 ## 限制 / 下一步
 
-- `Quota` 已接入 room 创建、router/HostHub 的 stream/字节路径；全局 4Mbps 上限尚未接入，
-  目前是每 room 2Mbps。没有 `/metrics`，先观察真实流量再加指标。
+- `Quota` 已接入 room 创建、router/HostHub 的 stream/字节路径，并同时执行每 room 2Mbps
+  与全局 4Mbps；`/metrics` 已提供基础 gauge。本机没有 Docker，容器构建仍未验证。
 - 腾讯云 443 部署等 ICP 备案；备案前只本地 9443/9444 验证。
 - 手机真机 relay pinning 仍未验收（M3 遗留）。
