@@ -1,7 +1,13 @@
-import { For, Show, type Component } from "solid-js"
-import { BasicTool } from "@mafw/session-ui/basic-tool"
+import { For, Show, createMemo, type Component } from "solid-js"
+import { ToolCard } from "@mafw/session-ui/tool-card"
 import type { ToolProps } from "@mafw/session-ui/message-part"
-import { genericSections, type ListItem, type Section, type ToolBadge, type ToolCardSpec } from "./extract"
+import {
+  resolvePresentation,
+  type Section as ToolSection,
+  type ToolPresentationContext,
+} from "@mafw/session-ui/tool-presentation"
+import { presentFamily } from "./family-present"
+import type { ListItem, Section, ToolCardSpec } from "./extract"
 
 const BADGE_STYLE: Record<string, any> = {
   ok: { background: "var(--accent-bg)", color: "var(--accent)" },
@@ -84,42 +90,19 @@ function SectionView(props: { section: Section }) {
   )
 }
 
-/** Renders a list of Sections — shared by familyCard and bespoke cards. */
+/** Renders a list of Sections — shared by FamilyCard and bespoke cards. */
 export function ToolSections(props: { sections: Section[] }) {
   return <For each={props.sections}>{(sec) => <SectionView section={sec} />}</For>
 }
 
-export function familyCard(spec: ToolCardSpec): Component<ToolProps> {
-  return (props) => {
-    const sections = (): Section[] => {
-      if (props.status !== "completed" || !props.output) return []
-      let out: Section[] = []
-      try {
-        out = spec.extract(props.input, props.output)
-      } catch (e) {
-        console.warn("[mafw]", e)
-      }
-      // 兜底：spec 没产出内容时，用通用 JSON 视图，保证卡片不留空
-      return out.length ? out : genericSections(props.output)
-    }
-    const badge = (): ToolBadge | undefined =>
-      props.status === "completed" ? spec.badge?.(props.input, props.output) : undefined
-    return (
-      <BasicTool
-        icon={spec.icon as any}
-        trigger={{
-          title: spec.title,
-          subtitle: spec.subtitle?.(props.input),
-          action: badge() ? <span class="mafw-tool-badge" data-tone={badge()!.tone ?? "muted"}>{badge()!.text}</span> : undefined,
-        }}
-        status={props.status}
-        animated
-      >
-        <div class="mafw-tool-box"><ToolSections sections={sections()} /></div>
-        <Show when={props.status === "completed" && sections().length === 0}>
-          <div class="mafw-tool-empty">(无输出)</div>
-        </Show>
-      </BasicTool>
-    )
-  }
+/** Desktop-injected `ToolRegistryEntry.renderSections` for family cards. */
+export function familyRenderSections(sections: ToolSection[]) {
+  return <ToolSections sections={sections as unknown as Section[]} />
+}
+
+/** Presenter-driven family card; also the `goal-created` legacy fallback. */
+export const FamilyCard: Component<ToolProps & { spec: ToolCardSpec }> = (props) => {
+  const context = (): ToolPresentationContext => ({ props, mode: "chat", t: (key) => key })
+  const presentation = createMemo(() => resolvePresentation(presentFamily(props.spec, context()), context()))
+  return <ToolCard props={props} presentation={presentation()} renderSections={familyRenderSections} />
 }

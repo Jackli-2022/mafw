@@ -4,7 +4,7 @@ import type { ToolProps } from "@mafw/session-ui/message-part"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { TOOL_SPECS } from "./extract"
-import { familyCard } from "./shared"
+import { FamilyCard } from "./shared"
 import { goalCreatedActionState, goalCreatedView, type GoalCreatedView, type GoalLiveState } from "./goal-created-model"
 import "./goal-created.css"
 
@@ -23,8 +23,6 @@ let actions: GoalCreatedActions | null = null
 export function configureGoalCreatedActions(next: GoalCreatedActions | null): void {
   actions = next
 }
-
-const FallbackTool = familyCard(TOOL_SPECS.mafw_create_goal)
 
 function GoalCreatedBody(props: { view: () => GoalCreatedView; status?: string }) {
   const [confirming, setConfirming] = createSignal(false)
@@ -153,7 +151,10 @@ function GoalCreatedBody(props: { view: () => GoalCreatedView; status?: string }
 export const MafwGoalCreatedCard: Component<ToolProps> = (props) => {
   const view = createMemo(() => goalCreatedView(props.input, props.output, props.status))
   return (
-    <Show when={view().kind === "tech_lead"} fallback={<FallbackTool {...props} />}>
+    <Show
+      when={view().kind === "tech_lead"}
+      fallback={<FamilyCard spec={TOOL_SPECS.mafw_create_goal} {...props} />}
+    >
       <GoalCreatedBody view={view} status={props.status} />
     </Show>
   )
