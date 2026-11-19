@@ -10,6 +10,22 @@
     "t1MaxChars": 600
   },
   "seed": "Temp/opencode/session-recall-seed.json (read-only; no live DB reads)",
+  "topicAudit": {
+    "source": "Temp/opencode/session-topic-audit-seed.json (read-only)",
+    "total": 9,
+    "active": 5,
+    "fieldCoverage": {
+      "summary": "4/5",
+      "entities": "4/5",
+      "aliases": "0/5",
+      "openLoops": "4/5",
+      "retrievalKeys": "4/5"
+    },
+    "notes": [
+      "Corpus-level audit numbers, frozen as recorded: 9 sessions total, 5 with an active topic; summary/entities/openLoops/retrievalKeys present in 4 of the 5 active sessions, aliases in 0 of 5 (every alias list is empty).",
+      "Only the CURRENT session's TopicState is frozen verbatim (see each case's topicState); the 4/5 and 0/5 counts above are NOT re-derived from it."
+    ]
+  },
   "notes": [
     "BOOTSTRAP set: 3 frozen real/reconstructed cases. It is NOT a benchmark and cannot support generalisation claims; the spec still requires 20-50 dev cases plus an isolated held-out set.",
     "Annotations are per (memory id, rendered role) with labels answer|context|noise|repeat|stale-or-conflict.",
@@ -17,7 +33,10 @@
     "The two negative cases are kept exactly as the user reported them: their noise bodies are still displayed by the current serve path, and the annotations were NOT relaxed to manufacture an improvement.",
     "These fixtures are frozen: do not regenerate them from the live DB or from current ranks. A new case gets a new id and its own provenance.",
     "snapshotConfig is the capture-time serve config, frozen with the fixtures. The runner never reads the live gateway config; an explicit --snapshot-config JSON override is recorded as configSource=override.",
-    "Provenance honesty: quality-negative is captured verbatim (stored block served unchanged). research-negative and model-preference are REPLAYED: their served blocks are re-rendered from the frozen pool by the real adapter. For model-preference the serve-time query was not captured, so currentQuery is the turn-212 user text used as a stand-in (not the recorded input of that serve)."
+    "Provenance honesty: quality-negative is captured verbatim (stored block served unchanged). research-negative and model-preference are REPLAYED: their served blocks are re-rendered from the frozen pool by the real adapter. For model-preference the serve-time query was not captured, so currentQuery is the turn-212 user text used as a stand-in (not the recorded input of that serve).",
+    "P1 shadow extension: liveCapture/liveAnnotations/liveExpectedAnswerFamilies freeze the live boundary-path output captured in Temp/opencode/session-recall-live-seed.json; the shadow runner never requests the Gateway. The capture printed only 6-char pointer tails, so live annotation ids are those tails (snapshot annotations keep full ids). liveCapture.query is the capture's own input when it differs from the case's currentQuery. A live capture with no memory/T1 pointer in its block (a bare <topic-recall> shell) is NOT a served memory block.",
+    "Live timing honesty: the seed recorded no wall-clock time, so capturedAt is frozen as an ordering token (2026-11-19T09:04:00.000Z). That is 42 min after quality-negative's snapshot build and 32 min after research-negative's, both past the 10-min snapshot TTL. The live arm is therefore a LATER live call for the same query text, NOT a same-turn counterfactual: it says 'what the live path returned later', not 'what it would have returned on that turn'.",
+    "topicState is the audited CURRENT TopicState of ses_e7444718cffeVJ3eJOTAReq8F0 (revision 4, updatedAt 2026-11-18T10:05:23.261Z), frozen once and replayed against all three 2026-11-19 cases. It was not captured per serve (it predates every snapshot build here), so per-case topic freshness is NOT measured; topicState.audit.staleRisk carries that verdict as frozen data the evaluator never re-derives."
   ],
   "cases": [
     {
@@ -73,7 +92,47 @@
           "label": "noise"
         }
       ],
-      "expectedAnswerFamilies": []
+      "expectedAnswerFamilies": [],
+      "liveCapture": {
+        "capturedAt": "2026-11-19T09:04:00.000Z",
+        "query": "现在记忆系统质量和效率",
+        "block": "<topic-recall>\n主题：未设置\n相关记忆：无\nAgent：理解当前对话后，使用 mafw_topic_set 设置主题\n</topic-recall>"
+      },
+      "liveAnnotations": [],
+      "topicState": {
+        "sessionId": "ses_e7444718cffeVJ3eJOTAReq8F0",
+        "topic": "个人记忆质量治理",
+        "summary": "误注入已清零；implicit 提升受低置信抑制契约约束，等待准入策略决定",
+        "entities": [
+          "personal-recall",
+          "lexical-support",
+          "implicit",
+          "FOK"
+        ],
+        "aliases": [],
+        "openLoops": [
+          "implicit 提升需显式批准 lexical-admission 或改 FOK/上下文路径",
+          "active 相似记忆合并",
+          "snapshot 池未经过词级否决",
+          "100ms 边界契约"
+        ],
+        "retrievalKeys": [
+          "lexical-admission",
+          "implicit 2/10",
+          "相似记忆合并",
+          "low-confidence suppression"
+        ],
+        "active": true,
+        "revision": 4,
+        "updatedAt": "2026-11-18T10:05:23.261Z",
+        "audit": {
+          "staleRisk": [
+            "summary 写「误注入已清零」，但 2026-11-19 两条真实 case（quality-negative / research-negative）仍由 snapshot 展示 noise 本体",
+            "retrievalKeys 仍含「implicit 2/10」，是 P1 之前的旧基线数值，不是当前状态",
+            "updatedAt 2026-11-18T10:05:23.261Z 早于三条 case 的 snapshot builtAt（2026-11-19），且未按 serve 逐条捕获"
+          ]
+        }
+      }
     },
     {
       "id": "research-negative-2026-11-19",
@@ -173,7 +232,47 @@
           "label": "repeat"
         }
       ],
-      "expectedAnswerFamilies": []
+      "expectedAnswerFamilies": [],
+      "liveCapture": {
+        "capturedAt": "2026-11-19T09:04:00.000Z",
+        "query": "分析一下，调研一下提升质量",
+        "block": "<topic-recall>\n主题：未设置\n相关记忆：无\nAgent：理解当前对话后，使用 mafw_topic_set 设置主题\n</topic-recall>"
+      },
+      "liveAnnotations": [],
+      "topicState": {
+        "sessionId": "ses_e7444718cffeVJ3eJOTAReq8F0",
+        "topic": "个人记忆质量治理",
+        "summary": "误注入已清零；implicit 提升受低置信抑制契约约束，等待准入策略决定",
+        "entities": [
+          "personal-recall",
+          "lexical-support",
+          "implicit",
+          "FOK"
+        ],
+        "aliases": [],
+        "openLoops": [
+          "implicit 提升需显式批准 lexical-admission 或改 FOK/上下文路径",
+          "active 相似记忆合并",
+          "snapshot 池未经过词级否决",
+          "100ms 边界契约"
+        ],
+        "retrievalKeys": [
+          "lexical-admission",
+          "implicit 2/10",
+          "相似记忆合并",
+          "low-confidence suppression"
+        ],
+        "active": true,
+        "revision": 4,
+        "updatedAt": "2026-11-18T10:05:23.261Z",
+        "audit": {
+          "staleRisk": [
+            "summary 写「误注入已清零」，但 2026-11-19 两条真实 case（quality-negative / research-negative）仍由 snapshot 展示 noise 本体",
+            "retrievalKeys 仍含「implicit 2/10」，是 P1 之前的旧基线数值，不是当前状态",
+            "updatedAt 2026-11-18T10:05:23.261Z 早于三条 case 的 snapshot builtAt（2026-11-19），且未按 serve 逐条捕获"
+          ]
+        }
+      }
     },
     {
       "id": "model-preference-live-2026-11-19",
@@ -555,7 +654,96 @@
             "mem_1795014293850_nzi4oy"
           ]
         }
-      ]
+      ],
+      "liveCapture": {
+        "capturedAt": "2026-11-19T09:04:00.000Z",
+        "query": "可以，执行交给子代理，gateway deepseek v4.1 flash",
+        "block": "<topic-recall>\n主题：未设置\n相关记忆：见下方\nAgent：理解当前对话后，使用 mafw_topic_set 设置主题\n</topic-recall>\n\n<recall>\n[联想线索 · 依据前请验证：取全文 → mafw_get_memory(\"#mem-后6位\")；检索更多 → mafw_search_hybrid]\n- #mem-cc1urw [2026-11-19 semantic] \"实施交子代理用deepseek-flash\" (E:0.8)\n  ↳ - #mem-s4bnsz [2026-11-19 procedural] \"Session质量P0交付与bootstrap基线\" (E:1.0)\n  ↳ - #mem-gpesz7 [2026-11-19 semantic] \"filtered snapshot serve 跳过 FOK 采样\" (E:0.8)\n- #mem-kothi1 [2026-11-11 semantic] \"整阶段交付用并行子代理并合并\" (E:0.7)\n  ↳ - #mem-148zik [2026-11-11 episodic] \"D1 batch-2 成果与刻意残留\" (E:0.6)\n  ↳ - #mem-3ipzxz [2026-11-11 procedural] \"账本 edit 失败先 read 再对齐\" (E:0.7)\n- #mem-nzi4oy [2026-11-18 semantic] \"子代理实施固定用 deepseek-v4.1-flash\" (E:0.6)\n[知识更新 · 同一事实有多个版本时，优先采用离问题时间最近的信息，不要把旧版本当成现状]\n</recall>"
+      },
+      "liveAnnotations": [
+        {
+          "id": "cc1urw",
+          "role": "anchor",
+          "label": "answer",
+          "note": "Live capture printed only pointer tails; this is the full id's last 6 chars. The body states the delegation model directly."
+        },
+        {
+          "id": "s4bnsz",
+          "role": "neighbor",
+          "label": "noise"
+        },
+        {
+          "id": "gpesz7",
+          "role": "neighbor",
+          "label": "noise"
+        },
+        {
+          "id": "kothi1",
+          "role": "anchor",
+          "label": "noise",
+          "note": "On-domain delegation note, but it does not answer WHICH model to use."
+        },
+        {
+          "id": "148zik",
+          "role": "neighbor",
+          "label": "noise"
+        },
+        {
+          "id": "3ipzxz",
+          "role": "neighbor",
+          "label": "noise"
+        },
+        {
+          "id": "nzi4oy",
+          "role": "anchor",
+          "label": "answer",
+          "note": "The frozen preference: subagent implementation is fixed to deepseek-v4.1-flash."
+        }
+      ],
+      "liveExpectedAnswerFamilies": [
+        {
+          "id": "subagent-model-preference-live",
+          "statement": "子代理实施固定用 gateway deepseek-v4.1-flash",
+          "equivalentIds": [
+            "cc1urw",
+            "nzi4oy"
+          ]
+        }
+      ],
+      "topicState": {
+        "sessionId": "ses_e7444718cffeVJ3eJOTAReq8F0",
+        "topic": "个人记忆质量治理",
+        "summary": "误注入已清零；implicit 提升受低置信抑制契约约束，等待准入策略决定",
+        "entities": [
+          "personal-recall",
+          "lexical-support",
+          "implicit",
+          "FOK"
+        ],
+        "aliases": [],
+        "openLoops": [
+          "implicit 提升需显式批准 lexical-admission 或改 FOK/上下文路径",
+          "active 相似记忆合并",
+          "snapshot 池未经过词级否决",
+          "100ms 边界契约"
+        ],
+        "retrievalKeys": [
+          "lexical-admission",
+          "implicit 2/10",
+          "相似记忆合并",
+          "low-confidence suppression"
+        ],
+        "active": true,
+        "revision": 4,
+        "updatedAt": "2026-11-18T10:05:23.261Z",
+        "audit": {
+          "staleRisk": [
+            "summary 写「误注入已清零」，但 2026-11-19 两条真实 case（quality-negative / research-negative）仍由 snapshot 展示 noise 本体",
+            "retrievalKeys 仍含「implicit 2/10」，是 P1 之前的旧基线数值，不是当前状态",
+            "updatedAt 2026-11-18T10:05:23.261Z 早于三条 case 的 snapshot builtAt（2026-11-19），且未按 serve 逐条捕获"
+          ]
+        }
+      }
     }
   ]
 }

@@ -58,6 +58,23 @@ Details that matter:
 - Frozen means frozen: do not regenerate a case from the live DB or from
   current ranks. A new case gets a new id and its own provenance line.
 
+### P1 shadow extension (live + topic)
+
+Each case may additionally freeze (all optional, never required by P0):
+
+| field | meaning |
+|---|---|
+| `liveCapture` | `{ capturedAt, block, query? }` — the live boundary-path output captured from a real turn, frozen verbatim. `capturedAt` is an ordering token: the seed recorded no wall clock. `query` records the capture's own input when it differs from the case's `currentQuery`. |
+| `liveAnnotations` | the live block's judgement, registered **independently** of `annotations` (the capture printed only 6-char pointer tails, so live ids are those tails while snapshot ids stay full). |
+| `liveExpectedAnswerFamilies` | answer families for the live ids; the validator rejects a live `answer` label outside them. |
+| `topicState` | the audited `TopicState` (topic/summary/entities/aliases/openLoops/retrievalKeys) plus `audit.staleRisk`. |
+
+The file's top-level `topicAudit` freezes the audit's corpus-level numbers
+(9 sessions, 5 active; summary/entities/openLoops/retrievalKeys in 4 of 5,
+aliases in 0 of 5). They are recorded, never re-derived: only the current
+session's `TopicState` is frozen verbatim, and it predates the three 2026-11-19
+cases — that is exactly what `topicState.audit.staleRisk` records.
+
 ## Annotation protocol
 
 The unit is `(memory id, rendered role)` — `anchor` / `neighbor` / `t1` (T1
@@ -200,14 +217,24 @@ Unit contracts:
 
 - `gateway/tests/unit/recall/session-quality.test.ts` — evaluator/validator;
 - `gateway/tests/unit/recall/session-quality-runner.test.ts` — fixture → baseline
-  regression gate.
+  regression gate;
+- `gateway/tests/unit/recall/session-quality-shadow.test.ts` — four-arm shadow
+  evaluator + shadow runner API;
+- `gateway/tests/unit/recall/session-quality-shadow-runner.test.ts` — shadow
+  fixture → baseline consistency gate (import contract, stale-baseline failure,
+  literal pilot numbers, config-override sensitivity).
 
 ## Baseline 2026-11-19 (bootstrap)
 
 Artifact: `evaluation/session-recall/baseline.json` (`generatedAt`
 `2026-11-19T09:23:37.940Z`; baseline file SHA256
-`b9fb5dd7bae0c2f37a5723d620c8d116ab7711a8c2241c4eb806847f9bf935db`). Re-running
+`c56b4b029bb05ec739409a39f27c74ffd906b5a5c5b728db66dacc261bc0dbb3`). Re-running
 the generation command is byte-identical.
+
+The metrics below are unchanged since the first run: the only thing the P1
+shadow fixture extension moved is `fixture.notes` (the live/topic provenance
+notes). All six numbers, every per-case row, the snapshot config and the code
+fingerprint are byte-identical to the pre-extension baseline.
 
 | metric | value |
 |---|---|
@@ -256,6 +283,143 @@ Reading the baseline:
   All three were served; a future stale/topic-shift/FOK case contributes `0/0 →
   null` and increments `serve.notServed` instead of a misleading 100%.
 
+## P1 shadow: four frozen arms (2026-11-19, still bootstrap)
+
+Artifact: `evaluation/session-recall/shadow-baseline.json` (`generatedAt`
+`2026-11-19T10:00:00.000Z`; file SHA256
+`801fb6fd824c3fbea199e70f6a76fab8cc210a9ed1c81a43e25315013b0558dc`; code
+fingerprint `e3bc628a389ee54ff360b8aa23f022fcf466abae7db3bc1ef0385f1810578e7f`
+over 9 files: the P0 six serve-path sources, **`exact-evidence.ts`** (the facet
+arm calls it directly), `session-quality-shadow.ts` and `run-shadow.ts` itself).
+
+That list is fixed and reviewable, **not** a transitive-closure guarantee: a
+dependency reached through an already-listed file only changes the digest when
+the listed file itself changes, so a new module that can move these numbers must
+be added to `SHADOW_FINGERPRINT_SOURCES` explicitly. Because `run-shadow.ts` is
+in the list, **editing the runner itself invalidates this baseline** — regenerate
+it in the same change (the gate fails otherwise, and says which fields moved).
+
+The consistency gate is `gateway/tests/unit/recall/session-quality-shadow-runner.test.ts`.
+It imports the runner (asserting the import does not execute `main`), re-runs the
+frozen fixtures at the baseline's `generatedAt`, and requires `arms`,
+`configSource`, `snapshotConfig`, `fixture`, `summary`, `cases` and
+`codeFingerprint` to match the checked-in baseline via `diffShadowBaseline` /
+`assertShadowBaselineConsistent`. `command` and `generatedAt` are invocation
+metadata and are excluded from that comparison (a relocated regeneration is the
+same measurement); the suite pins their checked-in values separately. Every
+top-level report field must be classified: the eight measurement fields, the two
+contract flags and the two excluded invocation fields. An **unknown key on either
+side is a mismatch**, so a future measurement field cannot bypass the gate, and
+the two flags are compared rather than copied from the baseline. The gate also
+proves it is a gate: a baseline with a different fingerprint, config, metric or
+case set must fail, and an explicit `--snapshot-config` override must move the
+measured decision.
+
+`gateway/src/recall/session-quality-shadow.ts` evaluates the SAME frozen case
+along four arms so a mis-display can be attributed to a layer instead of a
+guess. It changes no production route, admission rule, FOK gate or block.
+
+| arm | what it measures | replay? |
+|---|---|---|
+| `snapshot-current` | the real P0 evaluator output, delegated verbatim (no re-scoring, no copied rules) | `false` (P0 provenance) |
+| `current-query-off` | the SAME `decideSnapshotUse` + FOK gate, then the **stored** snapshot block served verbatim | `false` |
+| `live-frozen` | the frozen `liveCapture.block`, scored with its own ids/annotations; the runner never calls Gateway | `false` |
+| `topic-facet` | one offline candidate rule that replaces ONLY the Harmonic support selection (T1 still runs through the real adapter) | `true` (`blockSource: facet-render`) |
+
+`current-query-off` switches off **only** the snapshot current-query adapter
+(`adaptSnapshotToCurrentQuery`). It does not model the live lexical veto — that
+veto is not part of the snapshot serve path and this evaluator never measures it,
+so calling this arm "lexical veto off" would be wrong.
+
+`live-frozen` has no pre-admission pool (the live path was never snapshotted), so
+legitimate suppression is `0/0 → null` — explicitly not measured, never 0%. A
+case without a frozen capture is **unmeasured**: it is excluded from
+`serve.notServed` / `serve.fallback` and from every rate denominator, and is
+listed in `unmeasuredCaseIds` (counting it as a fallback would report a failure
+nobody observed). A capture whose block printed no memory/T1 pointer (a bare
+`<topic-recall>` shell) is a different thing: it is **not served**
+(`served: false`, `fallbackReason: 'no-memory-pointers'`, no synthetic `use`
+decision) and it does count in `serve.notServed`. Suppression stays `null` for
+both. The arm also reports `liveCapture.query` (the live call's own input) as its
+`currentQuery`, never the snapshot-side stand-in.
+
+`topic-facet` rules (all evaluated offline):
+
+- exact evidence (`findExactRecallEvidence` over title/cue metadata) **bypasses**
+  the domain requirement;
+- every other candidate needs domain support from `entities` / `aliases` /
+  `retrievalKeys` **AND** raw `currentQuery` support (the adapter's own
+  `selectLexicallySupportedCandidates`);
+- a neighbour still needs its anchor retained;
+- no topic / inactive topic / empty domain list /
+  `snapshotContainment(topic + summary, rawQuery) < 0.25` falls back to the
+  current adapter, and the reason is recorded as `facetFallback`.
+
+`topic` and `summary` are used for the containment/uncertainty gate only — they
+are never domain evidence, so a word like 「质量」cannot become a domain
+shortcut. TopicState is a possibly-stale attention state: `audit.staleRisk` is
+frozen data carried into the result, not re-derived from text.
+
+Every arm keeps P0's per-case `displayed` / `suppressed` / `families` /
+`unannotatedDisplayed` / `measurementComplete` fields, plus `arm`, `available`,
+`replay`, `blockSource`, `facetFallback`, `topicProvided`, `topicStaleRisk`.
+`summarizeSessionShadow` groups results per arm through P0's own summarizer
+(numerators/denominators summed, never averaged) and adds the measured split
+(`measuredCases` / `unmeasuredCases` / `unmeasuredCaseIds` — only measured rows
+feed the summarizer) plus `casesWithTopic` / `facetsApplied` / `facetFallbacks` /
+`staleRisk`.
+
+Run:
+
+```bash
+npx ts-node --project gateway/tsconfig.json \
+  evaluation/session-recall/run-shadow.ts \
+  --out evaluation/session-recall/shadow-baseline.json \
+  --generated-at 2026-11-19T10:00:00.000Z
+# optional: --fixtures <path>  --snapshot-config '<json>'  --help
+```
+
+| arm | serve | precision | coverage | false display | suppression | neighbour | t1 repeat |
+|---|---|---|---|---|---|---|---|
+| `snapshot-current` | 3/3 (filtered 2) | 25.0% (2/8) | 100.0% (1/1) | 100.0% (2/2) | 0.0% (0/2) | 0.0% (0/2) | 100.0% (3/3) |
+| `current-query-off` | 3/3 (filtered 0) | 25.0% (2/8) | 100.0% (1/1) | 100.0% (2/2) | 0.0% (0/2) | 0.0% (0/4) | 100.0% (4/4) |
+| `live-frozen` | 1/3 (2 topic shells) | 66.7% (2/3) | 100.0% (1/1) | 0.0% (0/2) | n/a (0/0) | 0.0% (0/4) | n/a (0/0) |
+| `topic-facet` | 3/3 (filtered 2) | 33.3% (2/6) | 100.0% (1/1) | 100.0% (2/2) | 0.0% (0/2) | 0.0% (0/2) | 100.0% (3/3) |
+
+Reading the pilot (3 cases — a decision input, not a benchmark):
+
+- **The two negatives came from the snapshot layer, and the comparison is not a
+  same-turn one.** A **later** live call for the same query text returned no
+  memory pointer at all (`live-frozen` served 1/3: two bare topic shells, false
+  display `0/2`), while the snapshot path displayed 5 noise bodies. The live
+  captures are frozen at `2026-11-19T09:04:00.000Z` — 42 and 32 minutes after
+  those two snapshots were built, past the 10-min TTL — so they say "a later live
+  call for this text returned nothing", not "the live path would have returned
+  nothing on that turn".
+- **`current-query-off` does not excuse the adapter.** Serving the stored blocks
+  verbatim is not better here: same precision denominator, two extra neighbours
+  and one extra T1 line. The adapter is removing something; it is not creating
+  the noise.
+- **`topic-facet` removes one process-note noise per negative** (`q15k2p`, whose
+  only tie to the query is the word 质量) and loses no answer
+  (suppression `0/2`, coverage `1/1`). The third case falls back with
+  `low-containment`: its frozen topic is 个人记忆质量治理 while the query asks
+  what to delegate, so the facet correctly refuses to filter on a stale topic.
+- **The ceiling is visible.** Two noise anchors survive the facet because they
+  share a real domain term (`相似记忆合并` ↔ 记忆质量), and `xqjlsn` still survives
+  the current adapter through `v4`. That is the honest limit of a
+  metadata-domain rule on 3 cases; it is not evidence of generalisation.
+
+The shadow baseline also carries the frozen TopicState audit: 3/3 cases have a
+topic, the facet applied on 2, and every case reports the three stale-risk
+reasons recorded with the capture (summary says the mis-injection was cleared;
+`retrievalKeys` still holds `implicit 2/10`; the state predates every snapshot
+build here).
+
+Reproducibility: same fixtures + same snapshot config + same code fingerprint
+reproduce every count; only `generatedAt` and the recorded `command` (which
+contains `--out`) vary between runs.
+
 ## Change policy
 
 - Keep the frozen expectations. If a case's ids no longer exist in the corpus,
@@ -274,3 +438,19 @@ Reading the baseline:
   re-run, the checked-in baseline and the code fingerprint. Regenerate with a
   fixed `--generated-at`, and update the fingerprint digest / baseline SHA in
   this README when the fingerprinted sources moved.
+- The **shadow** baseline has the same rule and one extra edge: `run-shadow.ts`
+  is itself fingerprinted, so any runner edit must regenerate
+  `shadow-baseline.json` in the same change; the shadow gate then fails on the
+  file hash and the digest until it is regenerated.
+- The P1 pilot verdict and its caveats are in
+  `docs/research/2026-11-19-session-recall-p1-shadow-results.md`. Read it before
+  quoting a number from this page: the arms have different denominators, the
+  live captures are later same-text calls, and `falseDisplay` is still 2/2.
+- The shadow set is a **pilot**, not an admission proposal: `topic-facet` wins
+  nothing in production until a dev/hold-out set says so. A `topic-facet` change
+  that drops an `answer|context` candidate must show up as a worse
+  `legitimateSuppression` in `shadow-baseline.json` — never relabel the fixture
+  to hide it.
+- `live-frozen` must stay a frozen artifact. Do not make the runner request a
+  live block: a capture is evidence with a timestamp, a live call is not
+  reproducible.
