@@ -39,10 +39,10 @@ describe('ProcessTimeline', () => {
     expect(styles).not.toContain('.mafw-process-tool-row')
     expect(styles).toContain('.mafw-process-step-card [data-slot="basic-tool-tool-title"]')
     expect(styles).toContain('.mafw-process-step-card [data-slot="basic-tool-tool-subtitle"]')
-    expect(styles).toContain('.mafw-process-step-card [data-component="task-tool-title"]')
-    expect(styles).toContain('.mafw-process-step-card [data-component="task-tool-icon"]')
+    expect(styles).not.toContain('task-tool-title')
+    expect(styles).not.toContain('task-tool-icon')
     expect(styles).toContain('font-size: 11px')
-    expect(styles).toContain('border: 0')
+    expect(styles).toContain('min-height: 28px')
     expect(styles).toContain('.mafw-process-think-label')
   })
 

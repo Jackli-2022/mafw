@@ -106,17 +106,15 @@
    normalises the chrome (11px title, 10.5px target, no family icon, one
    chevron); each card keeps its own body: diff, terminal, question, family
    sections, subagent navigation. */
-/* Row tools now use ToolCard's own compact tokens (tool-card.css). These
-   scoped rules remain for legacy diff / MAFW cards until Wave 2/3. */
+/* Row, diff, and rich tools now use ToolCard's own compact tokens
+   (tool-card.css). These scoped rules remain for legacy MAFW family cards
+   until Wave 4. */
 .mafw-process-step-card {
   position: relative;
   margin: 2px 0 4px;
   /* Collapsed title starts at 6px (trigger padding). Expanded bodies use the
      same edge so they don't step one level deeper into the rail. */
   --mafw-tool-content-left: 6px;
-}
-.mafw-process-step-card [data-component="task-tool-icon"] {
-  display: none;
 }
 .mafw-process-step-card [data-component="tool-trigger"] {
   gap: 4px;
@@ -160,41 +158,6 @@
 }
 .mafw-process-step-card [data-slot="basic-tool-tool-action"] {
   font-size: 9.5px;
-}
-
-/* Task uses a bespoke trigger: drop its card chrome and leading agent icon,
-   keep the subtitle and the "open subagent" action. */
-.mafw-process-step-card [data-component="task-tool-card"],
-body[data-new-layout] .mafw-process-step-card [data-component="task-tool-card"] {
-  gap: 4px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-}
-.mafw-process-step-card [data-component="task-tool-card"] [data-component="task-tool-surface"],
-body[data-new-layout] .mafw-process-step-card [data-component="task-tool-card"] [data-component="task-tool-surface"] {
-  padding: 0;
-  border-radius: 0;
-  background: transparent;
-}
-.mafw-process-step-card [data-component="task-tool-title"],
-body[data-new-layout] .mafw-process-step-card [data-component="task-tool-title"] {
-  height: auto;
-  flex: none;
-  font-size: 11px;
-  font-weight: 550;
-  line-height: 1.45;
-  color: var(--text-strong);
-}
-.mafw-process-step-card [data-component="task-tool-card"] [data-slot="basic-tool-tool-subtitle"],
-body[data-new-layout] .mafw-process-step-card [data-component="task-tool-card"] [data-slot="basic-tool-tool-subtitle"] {
-  font-size: 10.5px;
-  font-weight: 400;
-  line-height: 1.45;
-  color: var(--text-weak);
-}
-.mafw-process-step-card [data-component="task-tool-action"] {
-  opacity: .6;
 }
 
 /* Bodies keep their native surface, only shed the chat-density gaps. */
