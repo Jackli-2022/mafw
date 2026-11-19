@@ -21,7 +21,7 @@ describe('memory receipt ChatPane wiring', () => {
 
   test('MafwShell passes the Memory page opener', () => {
     const shell = read('./MafwShell.tsx')
-    expect(shell).toContain('onOpenMemory={() =>')
+    expect(shell).toContain('onOpenMemory={openMemoryFocus}')
   })
 
   test('preload exposes the receipts call', () => {

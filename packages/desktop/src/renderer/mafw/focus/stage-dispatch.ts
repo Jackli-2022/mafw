@@ -1,7 +1,7 @@
 // 台的分派：subject → 用哪个舞台渲染。纯函数，方便测试。
 import type { Focus } from "./focus-model"
 
-export type StageKind = "editor" | "browser" | "terminal" | "plugin" | "goal" | "world" | "changeset"
+export type StageKind = "editor" | "browser" | "terminal" | "plugin" | "goal" | "world" | "changeset" | "memory"
 
 export type StageAction =
   | { kind: "editor"; root: string; rel: string; line?: number }
@@ -24,6 +24,8 @@ export function stageKindFor(focus: Focus): StageKind {
       return "world"
     case "changeset":
       return "changeset"
+    case "memory":
+      return "memory"
     default:
       return "world"
   }

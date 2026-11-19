@@ -14,6 +14,7 @@ export type SubjectRef =
   | { kind: "terminal"; id: string }
   | { kind: "plugin"; package: string; panel: string }
   | { kind: "changeset"; id: string; rel?: string }
+  | { kind: "memory" }
 
 export type Place = {
   scroll?: number
@@ -45,6 +46,8 @@ export function subjectKey(subject: SubjectRef): string {
       return `plugin:${subject.package}:${subject.panel}`
     case "changeset":
       return `changeset:${subject.id}`
+    case "memory":
+      return "memory"
   }
 }
 

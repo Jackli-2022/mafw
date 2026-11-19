@@ -25,6 +25,11 @@ test("goal/world dispatch to their stage", () => {
   assert.equal(stageKindFor(focus({ kind: "world" })), "world")
 })
 
+test("memory subjects dispatch to the memory stage", () => {
+  assert.equal(stageKindFor(focus({ kind: "memory" })), "memory")
+  assert.deepEqual(stageActionFor(focus({ kind: "memory" })), { kind: "none" })
+})
+
 test("stageActionFor drives the editor for file subjects", () => {
   assert.deepEqual(stageActionFor(focus(file)), {
     kind: "editor",

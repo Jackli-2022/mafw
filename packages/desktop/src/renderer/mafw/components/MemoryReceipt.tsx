@@ -130,6 +130,7 @@ export function MemoryReceipt(props: {
               class="mafw-memory-receipt-open"
               onClick={(event: MouseEvent) => {
                 event.stopPropagation()
+                setOpen(false)
                 props.onOpenMemory()
               }}
             >

@@ -10,6 +10,7 @@ export type DocumentTabIcon =
   | "goal"
   | "terminal"
   | "plugin"
+  | "memory"
 
 export type DocumentTabView = {
   id: string
@@ -30,7 +31,8 @@ export function documentTabIconName(icon: DocumentTabIcon):
   | "layout-grid"
   | "dot-grid"
   | "terminal"
-  | "mcp" {
+  | "mcp"
+  | "brain" {
   switch (icon) {
     case "world":
       return "layout-grid"
@@ -38,6 +40,8 @@ export function documentTabIconName(icon: DocumentTabIcon):
       return "dot-grid"
     case "plugin":
       return "mcp"
+    case "memory":
+      return "brain"
     default:
       return icon
   }

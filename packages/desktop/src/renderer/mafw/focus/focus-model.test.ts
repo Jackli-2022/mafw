@@ -38,6 +38,14 @@ test("openSubject pushes a new focus", () => {
   assert.equal(next.stack[0]!.place.selection, undefined)
 })
 
+test("memory subject has a stable key and opens on the world scope", () => {
+  const memory: SubjectRef = { kind: "memory" }
+  assert.equal(subjectKey(memory), "memory")
+  const state = openSubject(createWorkbenchState("w1"), worldScope, memory)
+  assert.equal(state.stack.at(-1)!.subject.kind, "memory")
+  assert.equal(state.stack.at(-1)!.scope.kind, "world")
+})
+
 test("opening the same subject replaces place instead of pushing", () => {
   let state = openSubject(createWorkbenchState("w1"), worldScope, file)
   state = updatePlace(state, { scroll: 120, selection: { anchor: 1, head: 4 } })

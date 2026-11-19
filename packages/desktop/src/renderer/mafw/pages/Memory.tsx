@@ -19,7 +19,7 @@ interface EnergyDistribution { critical: number; high: number; medium: number; l
 interface L5Axiom { id: string; content: string; energy: number; created_at?: string }
 interface L5Heuristic { id: string; pattern: string; trigger_context: string[]; success_rate?: number; energy: number; created_at?: string }
 
-export function MemoryPage() {
+export function MemoryPage(props: { compact?: boolean }) {
   const [query, setQuery] = createSignal("")
   const [tab, setTab] = createSignal<"knowledge" | "episodes">("knowledge")
   const [results, setResults] = createSignal<any[]>([])
@@ -147,8 +147,10 @@ export function MemoryPage() {
     : []
 
   return (
-    <div>
-      <PageHeader title="Memory" subtitle="皮层知识 / 海马体 episode" />
+    <div class="mafw-memory-page" classList={{ "is-compact": !!props.compact }}>
+      <Show when={!props.compact}>
+        <PageHeader title="Memory" subtitle="皮层知识 / 海马体 episode" />
+      </Show>
 
       <div class="mafw-mem-tabs">
         <ButtonV2

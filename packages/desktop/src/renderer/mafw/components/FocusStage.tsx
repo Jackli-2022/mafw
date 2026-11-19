@@ -49,6 +49,7 @@ export function FocusStage(props: {
   onWebError?: (surfaceId: string, message: string) => void
   renderGoal?: () => JSX.Element
   renderWorld?: () => JSX.Element
+  renderMemory?: () => JSX.Element
 }): JSX.Element {
   const kind = () => stageKindFor(props.focus)
   const isDocument = () => kind() === "editor" || kind() === "browser" || kind() === "changeset"
@@ -102,6 +103,12 @@ export function FocusStage(props: {
 
         <Match when={kind() === "world"}>
           {props.renderWorld?.() ?? <DockEmpty icon="folder" text="世界总览待接入" />}
+        </Match>
+
+        <Match when={kind() === "memory"}>
+          <div class="mafw-focus-memory-stage">
+            {props.renderMemory?.() ?? <DockEmpty icon="brain" text="记忆待接入" />}
+          </div>
         </Match>
       </Switch>
     </div>

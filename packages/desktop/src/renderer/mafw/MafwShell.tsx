@@ -2736,6 +2736,7 @@ export function MafwShell() {
       : subject.kind === "web" ? "浏览器"
       : subject.kind === "terminal" ? "终端"
       : subject.kind === "plugin" ? "插件"
+      : subject.kind === "memory" ? "记忆"
       : subject.kind === "changeset"
         ? (changeSetDocuments().find((doc) => doc.id === subject.id)?.label ?? "改动")
       : "对象"
@@ -2750,7 +2751,7 @@ export function MafwShell() {
       : (worldIndex >= 0 ? worldIndex : 0)
     return frameView({
       worldName: railProjectName(currentProject(), true),
-      scopeLabel: focusScopeLabel(focus.scope),
+      scopeLabel: subject.kind === "memory" ? "项目" : focusScopeLabel(focus.scope),
       subjectLabel,
       worldIndex,
       scopeStartIndex,
@@ -2776,6 +2777,15 @@ export function MafwShell() {
     openSceneTab({ subject: { kind: "world" }, scope: worldScope, label: "世界总览", icon: "world" })
     setFocusState((state) =>
       openSubject({ ...state, worldId }, worldScope, { kind: "world" }),
+    )
+  }
+  const openMemoryFocus = () => {
+    revealWorkbench()
+    const worldId = currentProject() ?? "unscoped"
+    const worldScope: Scope = { kind: "world", worldId }
+    openSceneTab({ subject: { kind: "memory" }, scope: worldScope, label: "记忆", icon: "memory" })
+    setFocusState((state) =>
+      openSubject({ ...seedWorldRoot(state, worldScope), worldId }, worldScope, { kind: "memory" }),
     )
   }
   const openBrowserFocus = (url: string, opts?: { newTab?: boolean }) => {
@@ -2898,7 +2908,7 @@ export function MafwShell() {
     revealWorkbench()
   }
   const sceneSubjectOf = (subject: Focus["subject"]): SceneSubject | null => {
-    if (subject.kind !== "world" && subject.kind !== "goal" && subject.kind !== "terminal" && subject.kind !== "plugin") {
+    if (subject.kind !== "world" && subject.kind !== "goal" && subject.kind !== "terminal" && subject.kind !== "plugin" && subject.kind !== "memory") {
       return null
     }
     return subject
@@ -2907,6 +2917,7 @@ export function MafwShell() {
     if (subject.kind === "world") return "世界总览"
     if (subject.kind === "terminal") return "终端"
     if (subject.kind === "plugin") return `插件 · ${subject.panel}`
+    if (subject.kind === "memory") return "记忆"
     const goal = podStore.detail()?.goals.find((item) => item.goalId === subject.goalId)
     return goal?.title ? `Goal · ${goal.title}` : "Goal"
   }
@@ -4786,7 +4797,7 @@ export function MafwShell() {
                           techLeadInvite={activeLeadGoalInvite}
                           leadGoals={() => podStore.detail()?.goals ?? []}
                           leadPodId={() => podStore.detail()?.pod.id ?? null}
-                          onOpenMemory={() => { setShowConfig(false); setActiveTab("memory") }}
+                          onOpenMemory={openMemoryFocus}
                           leadAttention={() => podStore.detail()?.attention ?? []}
                           showTopics={showTopics()}
                           topicItems={topicItems()}
@@ -4885,8 +4896,6 @@ export function MafwShell() {
                   </PopoverShell>
                 </Show>
               </div>
-            ) : activeTab() === "memory" ? (
-              <MemoryPage />
             ) : activeTab() === "approvals" ? (
               <ApprovalsPage permissionCards={pendingPermissionCards} onPermissionReply={permReply} />
             ) : activeTab() === "triage" ? (
@@ -4990,6 +4999,7 @@ export function MafwShell() {
                     addAnnotation({ ...a, sessionID: sid, ...scope })
                   }}
                   onOpenReview={() => openChangesFace({ section: "review" })}
+                  renderMemory={() => <MemoryPage compact />}
                   renderWorld={() => (
                     <WorldOverviewStage
                       projectDir={currentProject()}

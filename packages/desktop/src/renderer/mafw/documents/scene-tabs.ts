@@ -5,7 +5,7 @@ import type { DocumentTabIcon } from "../document-frame-model"
 import type { Scope, SubjectRef } from "../focus/focus-model"
 import { subjectKey } from "../focus/focus-model"
 
-export type SceneSubject = Extract<SubjectRef, { kind: "world" | "goal" | "terminal" | "plugin" }>
+export type SceneSubject = Extract<SubjectRef, { kind: "world" | "goal" | "terminal" | "plugin" | "memory" }>
 
 export type SceneTab = {
   id: string
@@ -60,11 +60,13 @@ export function sceneTabId(subject: SceneSubject): string {
       return `scene:terminal:${subject.id}`
     case "plugin":
       return `scene:plugin:${subject.package}:${subject.panel}`
+    case "memory":
+      return "scene:memory"
   }
 }
 
 export function isPersistentSceneSubject(subject: SceneSubject): boolean {
-  return subject.kind === "world" || subject.kind === "goal"
+  return subject.kind === "world" || subject.kind === "goal" || subject.kind === "memory"
 }
 
 function defaultLabel(subject: SceneSubject): string {
@@ -77,6 +79,8 @@ function defaultLabel(subject: SceneSubject): string {
       return "终端"
     case "plugin":
       return subject.panel
+    case "memory":
+      return "记忆"
   }
 }
 
@@ -90,6 +94,8 @@ function defaultIcon(subject: SceneSubject): DocumentTabIcon {
       return "terminal"
     case "plugin":
       return "plugin"
+    case "memory":
+      return "memory"
   }
 }
 
@@ -100,7 +106,7 @@ export function sceneTabs(): SceneTab[] {
 }
 
 export function sceneTabForSubject(subject: SubjectRef): SceneTab | null {
-  if (subject.kind !== "world" && subject.kind !== "goal" && subject.kind !== "terminal" && subject.kind !== "plugin") {
+  if (subject.kind !== "world" && subject.kind !== "goal" && subject.kind !== "terminal" && subject.kind !== "plugin" && subject.kind !== "memory") {
     return null
   }
   const id = sceneTabId(subject)
@@ -162,6 +168,7 @@ function isSceneSubject(value: unknown): value is SceneSubject {
     return typeof value.package === "string" && value.package.length > 0 &&
       typeof value.panel === "string" && value.panel.length > 0
   }
+  if (value.kind === "memory") return true
   return false
 }
 
@@ -178,7 +185,7 @@ function isScope(value: unknown): value is Scope {
 }
 
 const ICONS: ReadonlySet<DocumentTabIcon> = new Set([
-  "file", "globe", "review", "world", "goal", "terminal", "plugin",
+  "file", "globe", "review", "world", "goal", "terminal", "plugin", "memory",
 ])
 
 function parseSnapshot(raw: string | null): SceneSnapshot | null {

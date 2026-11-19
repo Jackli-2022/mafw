@@ -42,6 +42,15 @@ test("scene tab ids are stable per subject", () => {
   assert.equal(sceneTabId({ kind: "goal", goalId: "g1" }), "scene:goal:g1")
   assert.equal(sceneTabId({ kind: "terminal", id: "local" }), "scene:terminal:local")
   assert.equal(sceneTabId({ kind: "plugin", package: "mafw", panel: "memory" }), "scene:plugin:mafw:memory")
+  assert.equal(sceneTabId({ kind: "memory" }), "scene:memory")
+})
+
+test("memory scene tab is persistent with a brain icon", () => {
+  const tab = openSceneTab({ subject: { kind: "memory" }, scope: worldScope })
+  assert.equal(tab.id, "scene:memory")
+  assert.equal(tab.label, "记忆")
+  assert.equal(tab.icon, "memory")
+  assert.equal(tab.persistent, true)
 })
 
 test("opening a scene tab dedupes and updates its label", () => {
