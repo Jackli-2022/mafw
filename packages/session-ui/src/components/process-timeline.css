@@ -109,6 +109,9 @@
 .mafw-process-step-card {
   position: relative;
   margin: 2px 0 4px;
+  /* Collapsed title starts at 6px (trigger padding). Expanded bodies use the
+     same edge so they don't step one level deeper into the rail. */
+  --mafw-tool-content-left: 6px;
 }
 .mafw-process-step-card [data-component="task-tool-icon"] {
   display: none;
@@ -239,6 +242,22 @@ body[data-new-layout] .mafw-process-step-card [data-component="task-tool-card"] 
 .mafw-process-step-card .mafw-tool-empty {
   padding: 6px;
   font-size: 11px;
+}
+
+/* Expanded content lines up with the collapsed title, not one step deeper.
+   Diff cards keep their border; only their inner header padding is reduced. */
+.mafw-process-step-card [data-scope="apply-patch"] h3 > button {
+  padding-left: var(--mafw-tool-content-left);
+}
+.mafw-process-step-card [data-component="bash-output"] [data-slot="bash-pre"] {
+  padding-left: var(--mafw-tool-content-left);
+}
+.mafw-process-step-card [data-component="tool-output"] {
+  box-sizing: border-box;
+  padding-left: var(--mafw-tool-content-left);
+}
+.mafw-process-step-card .mafw-tool-box {
+  padding-left: var(--mafw-tool-content-left);
 }
 
 .mafw-process-output [data-component="markdown"] {

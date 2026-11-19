@@ -53,6 +53,13 @@ describe('ProcessTimeline', () => {
     expect(styles).toContain('.mafw-process-step-card .mafw-tool-box')
   })
 
+  test('aligns expanded content with the collapsed title', () => {
+    const styles = css()
+    expect(styles).toContain('--mafw-tool-content-left: 6px')
+    expect(styles).toContain('[data-scope="apply-patch"] h3 > button')
+    expect(styles).toContain('padding-left: var(--mafw-tool-content-left)')
+  })
+
   test('matches the edit card title size to the tool rows', () => {
     const styles = css()
     expect(styles).toContain('.mafw-process-step-card [data-slot="message-part-title-text"]')
