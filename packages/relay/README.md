@@ -53,6 +53,7 @@ needs raw 443, so the control cert must be supplied (DNS-01/ACME elsewhere).
 ## Limits
 
 - M4 local pieces only: no public deployment until the domain is ready.
-- No per-room bandwidth enforcement in the router yet; the `Quota` class is
-  unit-tested but not wired into the byte path.
-- Admin `/health` is metadata-only; no metrics endpoint yet.
+- `Quota` is wired into the router (stream admission/release + handshake/client
+  bytes) and the host DATA path (room byte budget); over-limit streams are
+  closed. There is no `/metrics` endpoint yet.
+- Admin `/health` is metadata-only.
