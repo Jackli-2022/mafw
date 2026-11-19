@@ -49,6 +49,12 @@ describe("ToolCard shell", () => {
     expect(tsx).toContain("(?!\\/)")
   })
 
+  test("owns the trigger inset instead of borrowing the legacy wrapper rule", () => {
+    expect(css).toMatch(
+      /\.mafw-tool-card \[data-component="collapsible"\] > \[data-slot="collapsible-trigger"\]\s*\{[^}]*padding:\s*0 6px/,
+    )
+  })
+
   test("normalises the diff body header to the chat density", () => {
     expect(css).toContain('[data-scope="apply-patch"] h3 > button')
     expect(css).toMatch(/\[data-scope="apply-patch"\] h3 > button\s*\{[^}]*padding-left:\s*0/)

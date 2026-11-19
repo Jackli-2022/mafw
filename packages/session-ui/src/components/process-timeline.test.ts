@@ -85,4 +85,24 @@ describe('ProcessTimeline', () => {
     expect(src).toContain('<Show when={!open()}>')
     expect(src).toContain('mafw-process-think-preview')
   })
+
+  test('thinking row matches the 28px tool trigger', () => {
+    const styles = css()
+    expect(styles).toMatch(
+      /\.mafw-process-think > \[data-slot="collapsible-trigger"\]\s*\{[^}]*height:\s*28px/,
+    )
+    expect(styles).toMatch(
+      /\.mafw-process-think > \[data-slot="collapsible-trigger"\]\s*\{[^}]*padding:\s*0 6px/,
+    )
+  })
+
+  test('thinking body aligns its first line with the collapsed label', () => {
+    const styles = css()
+    expect(styles).toMatch(
+      /\.mafw-process-think-body\s*\{[^}]*padding-left:\s*var\(--mafw-tool-content-left/,
+    )
+    expect(styles).not.toMatch(/\.mafw-process-think-body\s*\{[^}]*margin:\s*2px 0 6px 7px/)
+    expect(styles).not.toMatch(/\.mafw-process-think-body\s*\{[^}]*padding-left:\s*12px/)
+    expect(styles).not.toMatch(/\.mafw-process-think-body\s*\{[^}]*border-left/)
+  })
 })

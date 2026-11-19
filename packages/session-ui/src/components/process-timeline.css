@@ -61,6 +61,10 @@
   width: 1px;
   background: var(--border-weak-base);
 }
+.mafw-process-think > [data-slot="collapsible-trigger"] {
+  height: 28px;
+  padding: 0 6px;
+}
 .mafw-process-think-row {
   display: flex;
   align-items: center;
@@ -92,9 +96,8 @@
   margin-left: auto;
 }
 .mafw-process-think-body {
-  margin: 2px 0 6px 7px;
-  padding-left: 12px;
-  border-left: 1px solid var(--border-weak-base);
+  margin: 2px 0 4px;
+  padding-left: var(--mafw-tool-content-left, 6px);
 }
 .mafw-process-think-body [data-component="markdown"] {
   font-size: 11px;
