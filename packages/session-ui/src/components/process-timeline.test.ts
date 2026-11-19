@@ -56,8 +56,7 @@ describe('ProcessTimeline', () => {
   test('aligns expanded content with the collapsed title through the shared card', () => {
     const styles = fs.readFileSync(new URL('./tool-card.css', import.meta.url), 'utf-8')
     expect(styles).toContain('--mafw-tool-content-left: 6px')
-    expect(styles).toContain('[data-scope="apply-patch"] h3 > button')
-    expect(styles).toContain('padding-left: var(--mafw-tool-content-left)')
+    expect(styles).toMatch(/\[data-scope="apply-patch"\] h3 > button\s*\{[^}]*padding-left:\s*0/)
   })
 
   test('shared ToolCard owns the compact ChatView tokens', () => {

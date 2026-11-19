@@ -117,9 +117,10 @@
   color: var(--danger-text);
 }
 
-/* Diff bodies keep their own accordion surface; the header reads like the row. */
+/* Diff bodies keep their own accordion surface; the header reads like the row.
+   The shared body already carries the 6px edge, so the inner button adds none. */
 .mafw-tool-card [data-scope="apply-patch"] h3 > button {
-  padding-left: var(--mafw-tool-content-left);
+  padding-left: 0;
 }
 .mafw-tool-card [data-scope="apply-patch"] [data-slot="apply-patch-filename"] {
   font-size: 11px;
