@@ -35,4 +35,12 @@ describe("ToolCard shell", () => {
     expect(tsx).toContain("input.defaultOpen ?? false")
     expect(tsx).not.toContain("expanded.defaultOpen")
   })
+
+  test("normalises the diff body header to the chat density", () => {
+    expect(css).toContain('[data-scope="apply-patch"] h3 > button')
+    expect(css).toContain("padding-left: var(--mafw-tool-content-left)")
+    expect(css).toMatch(/\[data-slot="apply-patch-filename"\]\s*\{[^}]*font-size:\s*11px/)
+    expect(css).toMatch(/\[data-slot="apply-patch-directory"\]\s*\{[^}]*font-size:\s*10\.5px/)
+    expect(css).toMatch(/\[data-slot="diff-changes-additions"\][^}]*font-size:\s*10\.5px/)
+  })
 })

@@ -53,8 +53,8 @@ describe('ProcessTimeline', () => {
     expect(styles).toContain('.mafw-process-step-card .mafw-tool-box')
   })
 
-  test('aligns expanded content with the collapsed title', () => {
-    const styles = css()
+  test('aligns expanded content with the collapsed title through the shared card', () => {
+    const styles = fs.readFileSync(new URL('./tool-card.css', import.meta.url), 'utf-8')
     expect(styles).toContain('--mafw-tool-content-left: 6px')
     expect(styles).toContain('[data-scope="apply-patch"] h3 > button')
     expect(styles).toContain('padding-left: var(--mafw-tool-content-left)')
@@ -75,10 +75,10 @@ describe('ProcessTimeline', () => {
     expect(styles).toMatch(/\.mafw-process-seg-title\s*\{[^}]*font-weight:\s*400/)
   })
 
-  test('matches the edit card title size to the tool rows', () => {
+  test('no longer ships a separate edit card density', () => {
     const styles = css()
-    expect(styles).toContain('.mafw-process-step-card [data-slot="message-part-title-text"]')
-    expect(styles).toContain('font-size: 11px')
+    expect(styles).not.toContain('data-slot="message-part-title')
+    expect(styles).not.toContain('[data-scope="apply-patch"] h3 > button')
   })
 
   test('hides the thinking preview once the body is open', () => {

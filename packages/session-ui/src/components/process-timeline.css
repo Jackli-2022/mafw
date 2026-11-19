@@ -197,28 +197,6 @@ body[data-new-layout] .mafw-process-step-card [data-component="task-tool-card"] 
   opacity: .6;
 }
 
-/* Edit/write use their own trigger markup; match the borderless tool rows so
-   Edit, Shell and Read all read at the same size. */
-.mafw-process-step-card [data-slot="message-part-title"] {
-  gap: 6px;
-  font-size: 11px;
-  line-height: 1.45;
-}
-.mafw-process-step-card [data-slot="message-part-title-text"] {
-  font-size: 11px;
-  font-weight: 550;
-  color: var(--text-strong);
-}
-.mafw-process-step-card [data-slot="message-part-title-filename"],
-.mafw-process-step-card [data-slot="message-part-directory"] {
-  font-size: 10.5px;
-  font-weight: 400;
-  color: var(--text-weak);
-}
-.mafw-process-step-card [data-slot="message-part-actions"] {
-  font-size: 9.5px;
-}
-
 /* Bodies keep their native surface, only shed the chat-density gaps. */
 .mafw-process-step-card [data-component="tool-output"] {
   margin-bottom: 0;
@@ -247,10 +225,7 @@ body[data-new-layout] .mafw-process-step-card [data-component="task-tool-card"] 
 }
 
 /* Expanded content lines up with the collapsed title, not one step deeper.
-   Diff cards keep their border; only their inner header padding is reduced. */
-.mafw-process-step-card [data-scope="apply-patch"] h3 > button {
-  padding-left: var(--mafw-tool-content-left);
-}
+   Diff cards get the same alignment from tool-card.css. */
 .mafw-process-step-card [data-component="bash-output"] [data-slot="bash-pre"] {
   padding-left: var(--mafw-tool-content-left);
 }
