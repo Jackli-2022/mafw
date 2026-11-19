@@ -1,8 +1,9 @@
 # 2026-11-19 · 记忆回执收成 turn 的安静收尾线
 
 - **版本**：`v5.1.0`（桌面交互变更，不升版本号）
-- **提交**：`937f929dc`
-- **范围**：desktop renderer 回合 footer 的记忆回执；gateway / runtime 契约零改动
+- **提交**：`937f929dc` + `021ec6f92`
+- **范围**：desktop renderer 回合 footer 的记忆回执 + session-ui 文本 part 的 turn footer 槽；
+  gateway / runtime 契约零改动
 - **依据**：真实 `memory_receipts` 数据 + dev app live 验证
 
 ## 问题
@@ -16,8 +17,11 @@
 
 ## 现状
 
-- **收尾线**：回合 footer 渲染 `小脑 + 想起 N 件旧事 ›`，11.5px `text-3`，无边框、无底色、
-  无竖线；容器 `margin: 4px 0 2px 25px`，和答案正文同一条左边缘。
+- **收尾线**：最后一个 assistant 文本 part 内、copy/meta 动作行之前渲染
+  `小脑 + 想起 N 件旧事 ›`，11.5px `text-3`，无边框、无底色、无竖线；
+  容器 `margin: 10px 0 0`，答案正文到触发线实测约 **16px**，meta 行在触发线下方 6px。
+  `SessionTurn.renderTurnFooter` → `TextPartDisplay.turnFooter`，由 `turnFooterPartID`
+  保证一轮只出现一次。
 - **hover 卡片**：340px，只列 3 条主记忆；每条在首个自然标点（`：。；，` / `: . ; ,`）处
   切成「标题 + 一行上下文」，长句用省略号收尾，不凭空生成摘要。
 - **邻居**：4 条邻居不再进主列表，折进「还有 4 条顺带想起」，点开才展开。
@@ -28,10 +32,12 @@
 
 ## 验证
 
-- 新增 **4** 条单测：`splitMemoryText` 3 条（中文标点、短文本、长无标点裁切）+
-  primary/neighbor 计数一致性 1 条；`typeLabel` 随类型标签一起退役。
-- desktop 全量：**4176 pass / 0 fail**（基线 4170）。
-- `tsgo --noEmit -p tsconfig.json`：通过。
-- `electron-vite build`：通过（1m 19s）。
-- live：Lead 会话 3 条回执全部渲染为「想起 3 件旧事」；触发行高 20px、距 turn footer 4px；
-  hover 卡片 340px，3 条主记忆 + 「还有 4 条顺带想起」，展开后 7 行、数字一致。
+- 新增 **5** 条单测：`splitMemoryText` 3 条（中文标点、短文本、长无标点裁切）+
+  primary/neighbor 计数一致性 1 条 + turn footer 槽（`renderTurnFooter` /
+  `turnFooterPartID`）1 条；`typeLabel` 随类型标签一起退役。
+- desktop 全量：**4184 pass / 0 fail**（基线 4176）。
+- `tsgo --noEmit -p tsconfig.json`：通过；session-ui `tsgo --noEmit`：通过。
+- `electron-vite build`：通过（1m 9s）。
+- live：Lead 会话 3 条回执全部渲染为「想起 3 件旧事」；触发行高 20px、答案正文到触发线
+  16px、meta 行在触发线下方 6px；hover 卡片 340px，3 条主记忆 +
+  「还有 4 条顺带想起」，展开后 7 行、数字一致。
