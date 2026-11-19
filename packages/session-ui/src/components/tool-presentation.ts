@@ -85,6 +85,20 @@ export interface ToolPresentationContext {
 
 export type ToolPresenter = (ctx: ToolPresentationContext) => ToolPresentation
 
+/** Which card a plugin proxy should fall back to. */
+export type ToolFallbackKind = "render" | "presentation" | "generic"
+
+/** Full-card render > presenter/renderBody > GenericTool. */
+export function toolFallbackKind(entry?: {
+  render?: unknown
+  present?: unknown
+  renderBody?: unknown
+}): ToolFallbackKind {
+  if (entry?.render) return "render"
+  if (entry?.present || entry?.renderBody) return "presentation"
+  return "generic"
+}
+
 export function statusOf(props: ToolProps): ToolStatus {
   if (props.status === "pending" || props.status === "running" || props.status === "error") return props.status
   return "completed"

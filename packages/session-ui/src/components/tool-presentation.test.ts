@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { DEFAULT_EXPANDED, defaultCollapsed, partOutputText, resolvePresentation } from "./tool-presentation"
+import { DEFAULT_EXPANDED, defaultCollapsed, partOutputText, resolvePresentation, toolFallbackKind } from "./tool-presentation"
 
 const ctx = (tool = "mcp_probe", status: any = "completed") => ({
   props: { tool, input: {}, metadata: {}, status } as any,
@@ -28,5 +28,15 @@ describe("tool presentation defaults", () => {
     expect(partOutputText({ content: [{ type: "text", text: "a" }, { type: "text", text: "b" }] })).toBe("a\nb")
     expect(partOutputText({})).toBeUndefined()
     expect(partOutputText({ output: "", content: [{ type: "text", text: "history" }] })).toBe("history")
+  })
+})
+
+describe("plugin fallback kind", () => {
+  test("prefers a full-card render, then a presenter, then GenericTool", () => {
+    expect(toolFallbackKind({ render: () => null })).toBe("render")
+    expect(toolFallbackKind({ present: () => ({}) })).toBe("presentation")
+    expect(toolFallbackKind({ renderBody: () => null })).toBe("presentation")
+    expect(toolFallbackKind({})).toBe("generic")
+    expect(toolFallbackKind(undefined)).toBe("generic")
   })
 })

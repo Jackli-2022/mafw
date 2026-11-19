@@ -5,7 +5,13 @@
 import { For, Show, createResource, createEffect, onCleanup, createSignal } from "solid-js"
 import type { JSX } from "solid-js"
 import { marked } from "marked"
-import { ToolRegistry, type ToolProps, type ToolComponent } from "@mafw/session-ui/message-part"
+import {
+  ToolPresentationFallback,
+  ToolRegistry,
+  type ToolProps,
+  type ToolComponent,
+} from "@mafw/session-ui/message-part"
+import { toolFallbackKind } from "@mafw/session-ui/tool-presentation"
 import { BasicTool, GenericTool } from "@mafw/session-ui/basic-tool"
 import type { Widget } from "../../../shared/ui-plugins"
 import { openImageLightbox } from "../image-lightbox"
@@ -15,7 +21,9 @@ import { isUnifiedToolCardClaimed } from "./tool-cards/registered-tools"
 type RegistryEntry = ReturnType<typeof ToolRegistry.entry>
 const proxied = new Map<string, RegistryEntry>()
 
-function UserPluginProxy(props: ToolProps & { pluginTool: string; original?: ToolComponent }) {
+function UserPluginProxy(
+  props: ToolProps & { pluginTool: string; original?: ToolComponent; originalEntry?: RegistryEntry },
+) {
   const settled = () => props.status === "completed" || props.status === "error"
   const buildReq = () => ({
     tool: props.pluginTool,
@@ -42,11 +50,16 @@ function UserPluginProxy(props: ToolProps & { pluginTool: string; original?: Too
   const [result] = createResource(liveReq, (req) => window.api.mafw.uiPlugins.render(req))
   const card = () => (result()?.ok ? result()?.card : undefined)
 
+  const fallback = () => {
+    if (props.original) return props.original(props)
+    if (props.originalEntry && toolFallbackKind(props.originalEntry) === "presentation") {
+      return <ToolPresentationFallback {...props} entry={props.originalEntry} />
+    }
+    return <GenericTool {...props} />
+  }
+
   return (
-    <Show
-      when={card()}
-      fallback={props.original ? props.original(props) : <GenericTool {...props} />}
-    >
+    <Show when={card()} fallback={fallback()}>
       {(c) => (
         <BasicTool
           icon={(c().icon || "mcp") as any}
@@ -175,7 +188,9 @@ async function applyUserPluginCards() {
     ToolRegistry.register({
       ...(entry ?? { name: tool }),
       name: tool,
-      render: (props: ToolProps) => <UserPluginProxy {...props} pluginTool={tool} original={original} />,
+      render: (props: ToolProps) => (
+        <UserPluginProxy {...props} pluginTool={tool} original={original} originalEntry={entry} />
+      ),
       override: true,
     })
   }

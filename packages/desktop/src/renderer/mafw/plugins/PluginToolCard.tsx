@@ -16,10 +16,13 @@
 import { Show, createEffect, createResource, createRoot, createSignal } from "solid-js"
 import { GenericTool } from "@mafw/session-ui/basic-tool"
 import {
+  ToolPresentationFallback,
   ToolRegistry,
   type ToolComponent,
   type ToolProps,
 } from "@mafw/session-ui/message-part"
+import { toolFallbackKind } from "@mafw/session-ui/tool-presentation"
+import type { ToolRegistryEntry } from "@mafw/session-ui/tool-registry"
 import type { PluginView } from "@mafw/plugin-contract"
 import { setUnifiedToolCardClaims } from "../components/tool-cards/registered-tools"
 import { reapplyUserPluginCards, releaseLegacyToolCard } from "../components/UserPluginCards"
@@ -42,8 +45,10 @@ import { classifyPanelActionOutput } from "./plugin-view-model"
 interface UnifiedCardBinding {
   packageName: string
   viewAction: string
-  /** Card replaced by this proxy; `undefined` = the default GenericTool chain. */
+  /** Card replaced by this proxy; `undefined` = no legacy render. */
   original?: ToolComponent
+  /** Presenter-only entries keep their ToolCard as the fallback. */
+  originalEntry?: ToolRegistryEntry
 }
 
 function UnifiedToolCardProxy(props: ToolProps & { unified: UnifiedCardBinding }) {
@@ -92,6 +97,7 @@ function UnifiedToolCardProxy(props: ToolProps & { unified: UnifiedCardBinding }
 
   const fallback = () => {
     const original = props.unified.original
+    const entry = props.unified.originalEntry
     // `handlesError: true` suppresses the generic ToolErrorCard, so the fallback
     // (no plugin view / failed action / stale generation) must show the reason
     // itself while keeping the original card visible.
@@ -100,7 +106,13 @@ function UnifiedToolCardProxy(props: ToolProps & { unified: UnifiedCardBinding }
         <Show when={typeof props.error === "string" && props.error.length > 0}>
           <div class="mafw-plugin-tool-error">{props.error}</div>
         </Show>
-        {original ? original(props) : <GenericTool {...props} />}
+        {original ? (
+          original(props)
+        ) : entry && toolFallbackKind(entry) === "presentation" ? (
+          <ToolPresentationFallback {...props} entry={entry} />
+        ) : (
+          <GenericTool {...props} />
+        )}
       </div>
     )
   }
@@ -189,6 +201,7 @@ const controller = createUnifiedToolCardController<ToolComponent>({
       packageName: entry.descriptor.name,
       viewAction: entry.card.viewAction,
       original: fallback,
+      originalEntry: ToolRegistry.entry(entry.target),
     }
     ToolRegistry.register({
       name: entry.target,

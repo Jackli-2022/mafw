@@ -21,8 +21,11 @@ describe("unified tool card error fallback", () => {
     expect(component).toContain("props.error")
     expect(component).toContain("mafw-plugin-tool-fallback")
     expect(component).toContain("mafw-plugin-tool-error")
-    // The original card is still rendered alongside the error line.
-    expect(component).toContain("original ? original(props) : <GenericTool {...props} />")
+    // The original card (full render or presenter) is still rendered alongside
+    // the error line; only truly unknown tools fall through to GenericTool.
+    expect(component).toContain("original ? (")
+    expect(component).toContain("<ToolPresentationFallback {...props} entry={entry} />")
+    expect(component).toContain("<GenericTool {...props} />")
   })
 
   test("the error style uses danger tokens without raw hex", () => {
