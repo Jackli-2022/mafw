@@ -1,13 +1,21 @@
 // 工具卡注册表（自 message-part.tsx 迁出的纯注册面——canonical 解析层
 // tool-canonical.ts 与 message-part 渲染链共用；轻依赖，bun test 可直接导入）。
-import type { Component } from "solid-js"
+import type { Component, JSX } from "solid-js"
 import type { ToolProps } from "./message-part"
+import type { ToolPresenter } from "./tool-presentation"
 
 export type ToolComponent = Component<ToolProps>
 
-interface ToolRegistryEntry {
+export interface ToolRegistryEntry {
   name: string
+  present?: ToolPresenter
+  /** Custom collapsed row (header-only, no Collapsible shell). */
+  renderCollapsed?: (props: ToolProps) => JSX.Element
+  /** Custom expanded body (body-only, rendered inside the card shell). */
+  renderBody?: ToolComponent
   render?: ToolComponent
+  /** Plugin override: a full-card render wins over first-party present(). */
+  override?: boolean
   /**
    * Opt-in: this card renders its own error state. Unflagged cards keep the
    * generic ToolErrorCard short-circuit (built-in/legacy behavior unchanged).
@@ -32,8 +40,34 @@ export function toolHandlesError(name: string): boolean {
   return !!entry?.render && entry.handlesError === true
 }
 
+export function overrideTool(name: string, render: ToolComponent) {
+  const previous = state[name]
+  state[name] = { ...(previous ?? { name }), name, render, override: true }
+  return () => {
+    if (previous) state[name] = previous
+    else delete state[name]
+  }
+}
+
+/** Slot occupancy: presenter-only entries count as available. */
+export function hasTool(name: string): boolean {
+  return !!(state[name]?.present || state[name]?.render)
+}
+
+export function toolNames(): string[] {
+  return Object.keys(state)
+}
+
+export function toolEntry(name: string): ToolRegistryEntry | undefined {
+  return state[name]
+}
+
 export const ToolRegistry = {
   register: registerTool,
   render: getTool,
   handlesError: toolHandlesError,
+  override: overrideTool,
+  has: hasTool,
+  names: toolNames,
+  entry: toolEntry,
 }
