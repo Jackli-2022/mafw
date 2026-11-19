@@ -31,6 +31,35 @@ describe("ToolPartDisplay presentation wiring", () => {
   })
 })
 
+describe("diff tools use the shared presentation path", () => {
+  const block = (name: string, next: string) => {
+    const start = componentSource.indexOf(`name: "${name}"`)
+    return componentSource.slice(start, componentSource.indexOf(`name: "${next}"`, start))
+  }
+
+  test("edit/write/apply_patch register present + renderBody without a legacy shell", () => {
+    const edit = block("edit", "write")
+    expect(edit).toContain('present: (ctx) => presentDiffTool("edit", ctx)')
+    expect(edit).toContain("renderBody: EditBody")
+    expect(edit).not.toContain("BasicTool")
+
+    const write = block("write", "apply_patch")
+    expect(write).toContain('present: (ctx) => presentDiffTool("write", ctx)')
+    expect(write).toContain("renderBody: WriteBody")
+
+    const patch = block("apply_patch", "todowrite")
+    expect(patch).toContain('present: (ctx) => presentDiffTool("apply_patch", ctx)')
+    expect(patch).toContain("renderBody: ApplyPatchBody")
+  })
+
+  test("details mode still drives defaultOpen and error parts stay generic", () => {
+    expect(componentSource).toContain("defaultOpen={props.defaultOpen}")
+    for (const [name, next] of [["edit", "write"], ["write", "apply_patch"], ["apply_patch", "todowrite"]] as const) {
+      expect(block(name, next)).not.toContain("handlesError")
+    }
+  })
+})
+
 describe("readPartText", () => {
   test("returns empty string when accum is undefined and part text is undefined", () => {
     expect(readPartText(undefined, { id: "part_1" })).toBe("")
