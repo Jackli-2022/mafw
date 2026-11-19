@@ -26,6 +26,7 @@ import { log } from '../core/utils/logger';
 import { HARD_BOUNDARIES } from '../skills/memory-curator-agent';
 import type { CompletionChannel, CompletionRequest, CompletionResult } from '../runtime/contract';
 import { httpComplete } from '../runtime/completion-http';
+import { withTimeout } from './recall-context';
 import type { PipelineBudgetLike } from './pipeline-budget';
 
 export interface ScanResult {
@@ -75,6 +76,16 @@ export interface ScanHttpDeps {
   completion?: () => CompletionChannel | undefined;
   /** Usage sink — direct-HTTP scans produce no opencode events, so the gateway injects a trajectory recorder here. */
   recordUsage?: (u: ScanUsageRecord) => void;
+  /**
+   * Optional scheduler seam for `prefetch` (gateway injects it; plain unit
+   * tests / standalone users keep the old direct fire-and-forget path).
+   *
+   * When present, prefetch ONLY submits the scan→snapshot chain — it must not
+   * start HTTP inline. The scheduler runs it once the recall foreground scope
+   * clears and the shared `snapshot` mutex is free. A sync throw or a rejected
+   * submit skips this optional work; never fall back to a direct run.
+   */
+  schedulePrefetch?: (sessionID: string, run: () => Promise<void>) => Promise<unknown>;
 }
 
 /**
@@ -395,9 +406,32 @@ export class IndexScanService {
       const channel = this.deps.completion?.();
       try {
         if (!channel) throw new Error('no completion channel');
-        const res = await channel.complete(req);
-        content = res.text;
-        usage = res.usage;
+        // Bounded wait (I1): a runtime channel may ignore `request.timeoutMs`.
+        // The scan→snapshot chain holds the global `snapshot` scheduler key,
+        // so an unbounded wait would block every session's snapshot build.
+        // `withTimeout` also consumes the abandoned attempt's late
+        // settle/reject (no unhandled rejection). On expiry we fail open
+        // through the existing failure cooldown — never fall back to direct
+        // HTTP here, which would hold the same key for a second timeout.
+        let attemptSettled = false;
+        let channelFailure: unknown = null;
+        const attempt = channel.complete(req).then(
+          (value) => { attemptSettled = true; return value; },
+          (error) => { attemptSettled = true; channelFailure = error; throw error; },
+        );
+        const completion = await withTimeout(attempt, timeoutMs);
+        if (completion === null) {
+          if (!attemptSettled) {
+            log.warn(`[IndexScan] completion channel exceeded ${timeoutMs}ms — scan skipped (no HTTP fallback)`);
+            this.lastAttemptFailed = true;
+            return null;
+          }
+          // The channel rejected before the deadline: keep the existing
+          // direct-HTTP fallback semantics.
+          throw channelFailure ?? new Error('completion channel returned no result');
+        }
+        content = completion.text;
+        usage = completion.usage;
       } catch (contractErr: any) {
         if (channel) {
           log.warn(`[IndexScan] completion channel failed (${contractErr.message}), falling back to direct HTTP`);
@@ -478,9 +512,15 @@ export class IndexScanService {
   }
 
   /**
-   * Fire-and-forget prefetch: scan the query now and store the result as a
+   * Fire-and-forget prefetch: scan the query and store the result as a
    * per-session snapshot for later sync-path consumption. Throttled per
    * session (60s); scan-internal dedup/cooldown still apply.
+   *
+   * Without `deps.schedulePrefetch` the scan runs directly (legacy behavior,
+   * used by standalone callers and unit tests). With it, prefetch only hands
+   * the chain to the scheduler — HTTP must not start on this call, so a
+   * boundary recall in flight is never delayed and a snapshot build holding
+   * the `snapshot` key is respected first.
    */
   prefetch(sessionID: string, query: string): void {
     if (!sessionID || !query.trim()) return;
@@ -488,17 +528,37 @@ export class IndexScanService {
     const last = this.lastPrefetchAt.get(sessionID) ?? 0;
     if (now - last < IndexScanService.PREFETCH_THROTTLE_MS) return;
     this.lastPrefetchAt.set(sessionID, now);
-    void this.scan(query)
-      .then((result) => {
-        if (result) {
-          this.setSnapshot(sessionID, {
-            ...result,
-            query,
-            builtAt: new Date().toISOString(),
-          });
-        }
-      })
-      .catch(() => {});
+
+    // The whole scan→snapshot chain travels as one unit: a failed scan returns
+    // null and leaves any previous snapshot untouched (same as before).
+    const run = async (): Promise<void> => {
+      const result = await this.scan(query);
+      if (!result) return;
+      this.setSnapshot(sessionID, {
+        ...result,
+        query,
+        builtAt: new Date().toISOString(),
+      });
+    };
+
+    const schedule = this.deps.schedulePrefetch;
+    if (!schedule) {
+      void run().catch(() => { /* fail-open: prefetch is optional */ });
+      return;
+    }
+
+    // Optional work: a scheduler sync throw (bad descriptor / live getter) or
+    // a rejected submit (admission/budget denied, task skipped) skips this
+    // prefetch. Both are logged with the session and error (previously silent)
+    // and swallowed so nothing leaks as an unhandled rejection and recall is
+    // unaffected. No retry — the next prefetch window is the retry.
+    try {
+      Promise.resolve(schedule(sessionID, run)).catch((err: any) => {
+        log.debug(`[IndexScan] prefetch not scheduled for session ${sessionID}: ${err?.message ?? String(err)}`);
+      });
+    } catch (err: any) {
+      log.warn(`[IndexScan] prefetch scheduling threw for session ${sessionID}: ${err?.message ?? String(err)}`);
+    }
   }
 
   private setSnapshot(sessionID: string, result: ScanResult): void {

@@ -228,6 +228,16 @@ export interface SearchRecallOptions {
    * the in-group blend/normalization moves its scores accordingly.
    */
   secondaryGraphExpand?: boolean
+  /**
+   * Optional sub-stage observer for diagnostics (live boundary route only).
+   * Emitted once per stage that actually runs, in order:
+   *   - `graph`:     the first `fetchScored` (BM25 + base graph expansion);
+   *   - `expansion`: `expandQuery` (entity / multi-hop secondary passes);
+   *   - `scan`:      `mergeScanResults` (precomputed prefetch snapshot).
+   * The outer `search` stage remains the whole call, not a replacement for the
+   * sum of these. Fail-open: a throwing observer never changes ids/scores.
+   */
+  onStage?: (stage: 'graph' | 'expansion' | 'scan', ms: number) => void
 }
 
 /** Multi-topic blob abstraction (chained MinHash merges) 鈥?dilutes precision. */
@@ -371,6 +381,22 @@ function fetchScored(index: any, query: string, topK: number, options: SearchRec
 }
 
 /**
+ * Report one sub-stage duration to the optional observer. Fail-open: an
+ * observer bug (or a throwing `onStage` getter) must never affect retrieval.
+ */
+function notifyStage(
+  options: SearchRecallOptions,
+  stage: 'graph' | 'expansion' | 'scan',
+  ms: number,
+): void {
+  try {
+    const observe = options?.onStage
+    if (typeof observe !== 'function') return
+    observe(stage, ms)
+  } catch { /* fail-open: metrics must never change recall */ }
+}
+
+/**
  * Search recall memories using BM25 + query expansion. This is the *sync*
  * recall path (<50ms): the plugin-side client aborts after 100ms, so the
  * index scan must never be awaited here 鈥?its results arrive via async
@@ -389,7 +415,14 @@ export async function searchRecallMemories(
 ): Promise<RecallMemory[]> {
   if (!index) return []
 
-  const scored = fetchScored(index, query, topK * 2, options)
+  // Task 3 sub-stage observer: `graph` is the first fetchScored call only
+  // (BM25 + base graph expansion); secondary expansion passes stay inside
+  // `expansion` below and never emit their own graph samples.
+  const tGraph0 = Date.now()
+  const fetched = fetchScored(index, query, topK * 2, options)
+  notifyStage(options, 'graph', Date.now() - tGraph0)
+
+  const scored = fetched
     .filter((s: any) => s.entry && !pushed.has(s.entry.id) && !s.entry.superseded_by)
   const norms = maxNormalize(scored.map((s: any) => s.score))
 
@@ -412,7 +445,9 @@ export async function searchRecallMemories(
   // Query expansion: entity / sub-query hits join with a RELATIVE weight
   // (norm 脳 0.4, capped) instead of flat energy 鈥?wide blobs no longer rack
   // up multiples of a constant.
+  const tExpansion0 = Date.now()
   const expandedResults = expandQuery(index, query, pushed, topK, undefined, options.secondaryGraphExpand)
+  notifyStage(options, 'expansion', Date.now() - tExpansion0)
   for (const exp of expandedResults) {
     if (resultMap.has(exp.id)) continue; // Already from BM25 鈥?don't override
     const entry = (index as any).getIndex?.()?.entries?.find((e: any) => e.id === exp.id)
@@ -435,7 +470,9 @@ export async function searchRecallMemories(
   // snapshots are precomputed, so this is a pure in-memory operation).
   const scanSnapshot = options.scanSnapshot
   if (scanSnapshot && scanSnapshot.relevantIds.length > 0) {
+    const tScan0 = Date.now()
     const expanded = mergeScanResults(resultMap, scanSnapshot, index, pushed, query)
+    notifyStage(options, 'scan', Date.now() - tScan0)
     log.info(`[Recall] bm25=${scored.length} scan=${scanSnapshot.relevantIds.length} expanded=${expanded} union=${resultMap.size} confidence=${scanSnapshot.confidence}`)
   }
 

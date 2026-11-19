@@ -90,6 +90,7 @@ import { attachManagerSessionRoutes } from '../routes/manager-session';
 import { attachEventsSseRoutes } from '../routes/events-sse';
 import { attachEventsReplayRoute } from '../routes/events-replay';
 import { attachKernelStatsRoute } from '../routes/kernel-stats';
+import type { Scheduler } from '../scheduler';
 import type { TimerService } from '../core/timer-service';
 import type { ConnectionTable } from '../resources/connections';
 import type { BufferCounters } from '../resources/outbound-buffer';
@@ -200,6 +201,8 @@ export interface ApiRouteDeps {
   projectDir: ReturnType<ChatDeps['projectDir']>;
   mafwDir: ReturnType<GoalsInlineDeps['mafwDir']>;
   recallCalledBySession: ReturnType<RecallDeps['recallCalledBySession']>;
+  /** Task 1: live scheduler handle for the external foreground scope (recall.context). */
+  scheduler: () => Pick<Scheduler, 'enterForeground'>;
   goalDriverMafwDirCache: ReturnType<GoalsInlineDeps['goalDriverMafwDirCache']>;
   sseClients: ReturnType<EventsSseDeps['sseClients']>;
   /** E2-1: release identity for the SSE greeting epoch fence (null before boot). */
@@ -775,6 +778,7 @@ export function attachAllRoutes(deps: ApiRouteDeps): void {
     mafwDir: () => deps.mafwDir,
     getGatewayDb: () => deps.getGatewayDb(),
     getScanService: () => deps.getScanService(),
+    scheduler: () => deps.scheduler(),
     broadcast: (event) => deps.broadcast(event),
     saveReceipt: (input) => {
       const db = deps.getGatewayDb();

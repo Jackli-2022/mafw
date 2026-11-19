@@ -266,6 +266,7 @@ const E10_COVERED_OPS = [
   'questions.reply',
   'recall.context',
   'recall.instructions',
+  'recall.metrics',
   'recall.pinned',
   'recall.priors',
   'recall.topicSet',
@@ -373,8 +374,9 @@ const E10_COVERED_OPS = [
 
 // Pinned: 317 through E10b, +1 for `humanToken.rotate` (E11-1) = 318,
 // +7 Phase 6 device-trust routes = 325, +2 last-good/rollback = 327,
-// +2 mobile remote access P0 (2026-11-18) = 335.
-const TOTAL_OPS = 336;
+// +2 mobile remote access P0 (2026-11-18) = 335,
+// +1 internal `GET /api/recall/metrics` (2026-11-19) = 337.
+const TOTAL_OPS = 337;
 
 function catalogOps(): Array<{ operationId: string; hasResponse: boolean }> {
   return buildRouteCatalog().map((def) => ({
@@ -1188,7 +1190,7 @@ describe('schema-coverage: ledger for catalog 200 response schemas (E10-3)', () 
     expect(lost).toEqual([]);
   });
 
-  it('the catalog covered set equals the ledger exactly, and the catalog still has 336 ops', () => {
+  it('the catalog covered set equals the ledger exactly, and the catalog still has 337 ops', () => {
     const ops = catalogOps();
     const covered = ops
       .filter((op) => op.hasResponse)

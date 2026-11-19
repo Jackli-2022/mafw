@@ -1,5 +1,5 @@
 /**
- * E10c-1：recall 读接口（4 ops）的 code-first 响应 schema。
+ * E10c-1：recall 读接口（5 ops）的 code-first 响应 schema。
  *
  * 只加 OpenAPI 元数据（`RouteDef.response`），不改变任何 handler 的 wire 形状；
  * `emit:openapi` 直接投影成 `responses.200.content['application/json'].schema`。
@@ -8,13 +8,15 @@
  *   - recall.pinned       → routes/pinned-recall.ts `handleRecallPinned`
  *   - recall.instructions → routes/recall-instructions.ts（含 render 失败的 fail-open 体）
  *   - recall.priors       → routes/agent-priors.ts `handleAgentPriors`
+ *   - recall.metrics      → recall/recall-metrics.ts `snapshotRecallMetrics`
  *
- * 四个面都是 plugin / pi host extension 的宿主注入通道（tags: internal）；SDK 不调用，
+ * 五个面都是 plugin / pi host extension 的宿主注入通道（tags: internal）；SDK 不调用，
  * 因此没有对应 DTO 可做 AssertEq，等价性由 `tests/unit/api-contract.test.ts` 的
  * property/Value.Check 断言钉住。
  *
  * 四条路由的失败姿态都是 **fail-open 200**（内存服务缺失 / 渲染异常 / 检索异常都回
- * 中性空体），所以没有 4xx/5xx 响应体需要建模。
+ * 中性空体），所以没有 4xx/5xx 响应体需要建模。`recall.metrics` 同为 fail-open 200：
+ * 无参数、无写操作，只读内存聚合（观测失败也回零值骨架，保持 schema 合法）。
  */
 import { Type } from '@sinclair/typebox'
 
@@ -36,6 +38,53 @@ const MemoryTypeSchema = Type.Union([
  */
 export const RecallContextResponse = Type.Object({
   pointers: Type.Union([Type.String(), Type.Null()]),
+})
+
+// ── recall.metrics ─────────────────────────────────────────────────────────
+
+/**
+ * `GET /api/recall/metrics` —— 边界 recall 分段计时/请求计数的只读投影。
+ *
+ * 直接投影 `recall-metrics.ts#snapshotRecallMetrics()`：`stages` 恒含全部
+ * `RECALL_STAGE_KEYS`（新增 `dense` = computeDenseScores+deadline、`scan` =
+ * mergeScanResults；`graph` = 首轮 fetchScored，`expansion` = expandQuery），
+ * `search` 仍是整次 `searchRecallMemories` 而不是子阶段之和。`requests.total`
+ * 是记录窗口内的请求数（`total` stage 同源，不重复计数），`visibleRate` 是
+ * `visible / total`（0 请求时为 1）。无参数、无写操作、无 4xx/5xx（fail-open 200）。
+ */
+const RecallStageStatsSchema = Type.Object({
+  count: Type.Number(),
+  p50: Type.Number(),
+  p95: Type.Number(),
+  p99: Type.Number(),
+  max: Type.Number(),
+})
+
+export const RecallMetricsResponse = Type.Object({
+  stages: Type.Object({
+    search: RecallStageStatsSchema,
+    graph: RecallStageStatsSchema,
+    expansion: RecallStageStatsSchema,
+    dense: RecallStageStatsSchema,
+    scan: RecallStageStatsSchema,
+    fok: RecallStageStatsSchema,
+    exact: RecallStageStatsSchema,
+    lexical: RecallStageStatsSchema,
+    neighbors: RecallStageStatsSchema,
+    render: RecallStageStatsSchema,
+    total: RecallStageStatsSchema,
+  }),
+  requests: Type.Object({
+    total: Type.Number(),
+    visible: Type.Number(),
+    visibleRate: Type.Number(),
+    clientAborted: Type.Number(),
+    byRoute: Type.Object({
+      snapshot: Type.Number(),
+      fallback: Type.Number(),
+    }),
+    bySnapshotDecision: Type.Record(Type.String(), Type.Number()),
+  }),
 })
 
 // ── recall.topicSet ─────────────────────────────────────────────────────────

@@ -192,6 +192,7 @@ import {
 import {
   RecallContextResponse,
   RecallInstructionsResponse,
+  RecallMetricsResponse,
   RecallPinnedResponse,
   RecallPriorsResponse,
   RecallTopicSetRequest,
@@ -865,6 +866,8 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/obs/capture', operationId: 'obs.capture', tags: ['internal'], request: ObsCaptureRequest, response: ObsCaptureResponse, errors: [400] },
   { method: 'POST', path: '/api/obs/episode-boundary', operationId: 'obs.episodeBoundary', tags: ['internal'], request: ObsEpisodeBoundaryRequest, response: ObsEpisodeBoundaryResponse, errors: [400] },
   { method: 'GET', path: '/api/recall/context', operationId: 'recall.context', tags: ['internal'], response: RecallContextResponse },
+  // Task 3：边界 recall 的分段计时/请求计数只读投影（无参数、无写操作）。
+  { method: 'GET', path: '/api/recall/metrics', operationId: 'recall.metrics', tags: ['internal'], response: RecallMetricsResponse },
   { method: 'POST', path: '/api/recall/topic', operationId: 'recall.topicSet', tags: ['internal'], request: RecallTopicSetRequest, response: RecallTopicSetResponse, errors: [400, 409] },
   { method: 'GET', path: '/api/recall/pinned', operationId: 'recall.pinned', tags: ['internal'], response: RecallPinnedResponse },
   // Task B3：T2-4 fallback 面 / W1 常驻先验块（plugin / pi host extension 消费；

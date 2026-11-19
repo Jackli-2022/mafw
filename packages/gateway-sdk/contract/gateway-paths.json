@@ -85342,6 +85342,482 @@
         }
       }
     },
+    "/api/recall/metrics": {
+      "get": {
+        "operationId": "recall.metrics",
+        "tags": [
+          "internal"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "stages",
+                    "requests"
+                  ],
+                  "properties": {
+                    "stages": {
+                      "type": "object",
+                      "required": [
+                        "search",
+                        "graph",
+                        "expansion",
+                        "dense",
+                        "scan",
+                        "fok",
+                        "exact",
+                        "lexical",
+                        "neighbors",
+                        "render",
+                        "total"
+                      ],
+                      "properties": {
+                        "search": {
+                          "type": "object",
+                          "required": [
+                            "count",
+                            "p50",
+                            "p95",
+                            "p99",
+                            "max"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "number"
+                            },
+                            "p50": {
+                              "type": "number"
+                            },
+                            "p95": {
+                              "type": "number"
+                            },
+                            "p99": {
+                              "type": "number"
+                            },
+                            "max": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "graph": {
+                          "type": "object",
+                          "required": [
+                            "count",
+                            "p50",
+                            "p95",
+                            "p99",
+                            "max"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "number"
+                            },
+                            "p50": {
+                              "type": "number"
+                            },
+                            "p95": {
+                              "type": "number"
+                            },
+                            "p99": {
+                              "type": "number"
+                            },
+                            "max": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "expansion": {
+                          "type": "object",
+                          "required": [
+                            "count",
+                            "p50",
+                            "p95",
+                            "p99",
+                            "max"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "number"
+                            },
+                            "p50": {
+                              "type": "number"
+                            },
+                            "p95": {
+                              "type": "number"
+                            },
+                            "p99": {
+                              "type": "number"
+                            },
+                            "max": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "dense": {
+                          "type": "object",
+                          "required": [
+                            "count",
+                            "p50",
+                            "p95",
+                            "p99",
+                            "max"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "number"
+                            },
+                            "p50": {
+                              "type": "number"
+                            },
+                            "p95": {
+                              "type": "number"
+                            },
+                            "p99": {
+                              "type": "number"
+                            },
+                            "max": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "scan": {
+                          "type": "object",
+                          "required": [
+                            "count",
+                            "p50",
+                            "p95",
+                            "p99",
+                            "max"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "number"
+                            },
+                            "p50": {
+                              "type": "number"
+                            },
+                            "p95": {
+                              "type": "number"
+                            },
+                            "p99": {
+                              "type": "number"
+                            },
+                            "max": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "fok": {
+                          "type": "object",
+                          "required": [
+                            "count",
+                            "p50",
+                            "p95",
+                            "p99",
+                            "max"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "number"
+                            },
+                            "p50": {
+                              "type": "number"
+                            },
+                            "p95": {
+                              "type": "number"
+                            },
+                            "p99": {
+                              "type": "number"
+                            },
+                            "max": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "exact": {
+                          "type": "object",
+                          "required": [
+                            "count",
+                            "p50",
+                            "p95",
+                            "p99",
+                            "max"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "number"
+                            },
+                            "p50": {
+                              "type": "number"
+                            },
+                            "p95": {
+                              "type": "number"
+                            },
+                            "p99": {
+                              "type": "number"
+                            },
+                            "max": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "lexical": {
+                          "type": "object",
+                          "required": [
+                            "count",
+                            "p50",
+                            "p95",
+                            "p99",
+                            "max"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "number"
+                            },
+                            "p50": {
+                              "type": "number"
+                            },
+                            "p95": {
+                              "type": "number"
+                            },
+                            "p99": {
+                              "type": "number"
+                            },
+                            "max": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "neighbors": {
+                          "type": "object",
+                          "required": [
+                            "count",
+                            "p50",
+                            "p95",
+                            "p99",
+                            "max"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "number"
+                            },
+                            "p50": {
+                              "type": "number"
+                            },
+                            "p95": {
+                              "type": "number"
+                            },
+                            "p99": {
+                              "type": "number"
+                            },
+                            "max": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "render": {
+                          "type": "object",
+                          "required": [
+                            "count",
+                            "p50",
+                            "p95",
+                            "p99",
+                            "max"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "number"
+                            },
+                            "p50": {
+                              "type": "number"
+                            },
+                            "p95": {
+                              "type": "number"
+                            },
+                            "p99": {
+                              "type": "number"
+                            },
+                            "max": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "total": {
+                          "type": "object",
+                          "required": [
+                            "count",
+                            "p50",
+                            "p95",
+                            "p99",
+                            "max"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "number"
+                            },
+                            "p50": {
+                              "type": "number"
+                            },
+                            "p95": {
+                              "type": "number"
+                            },
+                            "p99": {
+                              "type": "number"
+                            },
+                            "max": {
+                              "type": "number"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "requests": {
+                      "type": "object",
+                      "required": [
+                        "total",
+                        "visible",
+                        "visibleRate",
+                        "clientAborted",
+                        "byRoute",
+                        "bySnapshotDecision"
+                      ],
+                      "properties": {
+                        "total": {
+                          "type": "number"
+                        },
+                        "visible": {
+                          "type": "number"
+                        },
+                        "visibleRate": {
+                          "type": "number"
+                        },
+                        "clientAborted": {
+                          "type": "number"
+                        },
+                        "byRoute": {
+                          "type": "object",
+                          "required": [
+                            "snapshot",
+                            "fallback"
+                          ],
+                          "properties": {
+                            "snapshot": {
+                              "type": "number"
+                            },
+                            "fallback": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "bySnapshotDecision": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(.*)$": {
+                              "type": "number"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "const": false,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "const": false,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "const": false,
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/recall/topic": {
       "post": {
         "operationId": "recall.topicSet",

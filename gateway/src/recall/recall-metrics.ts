@@ -21,6 +21,8 @@ export type RecallStageKey =
   | 'search'
   | 'graph'
   | 'expansion'
+  | 'dense'
+  | 'scan'
   | 'fok'
   | 'exact'
   | 'lexical'
@@ -32,6 +34,8 @@ export const RECALL_STAGE_KEYS: readonly RecallStageKey[] = [
   'search',
   'graph',
   'expansion',
+  'dense',
+  'scan',
   'fok',
   'exact',
   'lexical',
@@ -102,6 +106,8 @@ const rings: Record<RecallStageKey, StageRing> = {
   search: new StageRing(),
   graph: new StageRing(),
   expansion: new StageRing(),
+  dense: new StageRing(),
+  scan: new StageRing(),
   fok: new StageRing(),
   exact: new StageRing(),
   lexical: new StageRing(),

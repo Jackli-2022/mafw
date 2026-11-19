@@ -137,6 +137,29 @@ export class Scheduler {
     this.pump();
   }
 
+  /**
+   * External foreground scope: hold the same `foregroundInFlight` state for
+   * work a caller performs OUTSIDE `submit` (the HTTP boundary-recall handler
+   * does dense search + BM25 + render inline). A `defer-to-idle` task queued
+   * while the count is non-zero waits, so a snapshot / index-scan refresh
+   * cannot start in the middle of a recall request.
+   *
+   * Returns an idempotent release: only the first call decrements (a repeated
+   * release must not free a sibling/nested scope) and pumps the queue.
+   */
+  enterForeground(): () => void {
+    this.foregroundInFlight++;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      // Guarded so the counter can never go negative — a negative value would
+      // keep `isEligible` passing for defer-to-idle work by accident.
+      if (this.foregroundInFlight > 0) this.foregroundInFlight--;
+      this.pump();
+    };
+  }
+
   stats(): SchedulerStats {
     const byPriority: Record<TaskPriority, number> = {
       foreground: 0,

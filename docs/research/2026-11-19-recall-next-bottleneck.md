@@ -200,3 +200,36 @@ GET /api/recall/metrics
 > **边界请求没有 foreground 保护，后台 snapshot build / index scan 可以在同一轮启动并拖慢 fallback。**
 
 这比继续压缩 BM25 / graph 更重要。
+
+## 8. 14:05 复测：短查询已接近目标，真实 session 仍有独立高基线
+
+复测环境：HEAD `194a8d9ac`（recall 目标路径自 `9c8d9a367` 后无变更），Gateway v5.1.0 / PID 51884，当前进程从 05:51:55Z 开始。共享工作树有其他会话的 adapter 改动，本次未触碰。
+
+### 固定 40 条（无 sessionID，只代表 live fallback）
+
+连续两轮质量完全一致：AUTO 17/30，exact 10/10，current-state 6/10，implicit 1/10，false injection 0/10，stale 0，entrypoint agreement 25/30；REST hit@1 63.3%、hit@3 73.3%、MRR 0.672。
+
+| 两轮合并 80 次请求 | p50 | p95 | max |
+|---|---:|---:|---:|
+| REST | 20ms | 24ms | 28ms |
+| AUTO | 80ms | 114ms | 220ms |
+
+AUTO 两轮分别为 83/118ms、79/110ms（p50/p95）。按 100ms 简单划线，62/80 在该预算内；这不是插件真实 visible rate，因为 runner 没有客户端 abort。当前 focused 回归为 77 suites / 606 tests 全通过。
+
+Artifacts：`personal-recall-current-2026-11-19-r1.json`、`personal-recall-current-2026-11-19-r2.json`（Temp/opencode）。
+
+### 真实 session（当前进程）
+
+14 次 session fallback：`search` p50/p95/max = **317/699/699ms**，近似阶段总和 p50/p95 = **333/714ms**，14/14 超过 100ms。与之对照，同一进程 80 次固定集 `search` p50/p95 = 77/109ms。
+
+部署 snapshot 当前轮质量门后，观察到 17 次 snapshot 决策：stale 10、topic-shift 7、**served 0、current-query-filter 0**。样本仍小，且不含未打日志的 no-snapshot；但足以说明当前 snapshot 没有实际降低这些请求的延迟，也还没有真实 serve 样本证明线上 precision。
+
+### 对前述根因判断的修正
+
+后台竞争仍有明确尖峰证据，不能取消 foreground/scheduler 隔离；但它**不足以解释真实 session 的整体高基线**：当前窗口没有 scan/snapshot 完成事件邻近时仍出现 160–580ms，且部分请求合并 `bm25=6 scan=8 expanded=8 union=14`。因此下一步必须同时测量：
+
+1. session 长查询与 expansion 的稳定成本；
+2. scan snapshot 合并及图扩展成本；
+3. 后台任务造成的尾部尖峰。
+
+现有 `search` 聚合计时无法继续拆分这三者；在补充分段观测前，不应再把所有 session 慢请求归因于后台竞争，也不应通过放宽 containment/FOK 来提高 snapshot serve 率。

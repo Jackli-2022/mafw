@@ -8,6 +8,7 @@
  * snapshotDecision / clientAborted counters (visible-rate denominator).
  */
 import {
+  RECALL_STAGE_KEYS,
   recordRecallStage,
   recordRecallRequest,
   resetRecallMetricsForTest,
@@ -18,6 +19,8 @@ const STAGES = [
   'search',
   'graph',
   'expansion',
+  'dense',
+  'scan',
   'fok',
   'exact',
   'lexical',
@@ -34,8 +37,23 @@ describe('recall-metrics', () => {
     for (const stage of STAGES) {
       expect(snap.stages[stage]).toEqual({ count: 0, p50: 0, p95: 0, p99: 0, max: 0 });
     }
+    expect(RECALL_STAGE_KEYS).toEqual(STAGES);
     expect(snap.requests.total).toBe(0);
     expect(snap.requests.visibleRate).toBe(1);
+  });
+
+  test('dense and scan sub-stages keep independent rings', () => {
+    recordRecallStage('dense', 8);
+    recordRecallStage('dense', 14);
+    recordRecallStage('scan', 3);
+
+    const { stages } = snapshotRecallMetrics();
+    expect(stages.dense.count).toBe(2);
+    expect(stages.dense.max).toBe(14);
+    expect(stages.scan.count).toBe(1);
+    expect(stages.scan.max).toBe(3);
+    // the new keys must not leak into the previous search ring
+    expect(stages.search.count).toBe(0);
   });
 
   test('recordRecallStage makes p50/p95/p99 readable for that stage', () => {

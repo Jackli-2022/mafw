@@ -2900,6 +2900,17 @@ class MafwScheduler {
               });
             } catch { /* never block the scan path */ }
           },
+          // Task 2: scan prefetch is optional background work — submit the
+          // scan→snapshot chain to the unified scheduler instead of running it
+          // inline. It shares `snapshot` with refreshSnapshot so only one
+          // index/snapshot job touches the retrieval cache at a time, and
+          // `defer-to-idle` keeps it out of an in-flight boundary recall
+          // (Task 1's external foreground scope).
+          schedulePrefetch: (sessionID, run) =>
+            this.scheduler.submit(
+              { id: `index-scan:${sessionID}`, priority: 'background', mutexKey: 'snapshot', strategy: 'defer-to-idle' },
+              run,
+            ),
         },
       );
       // Initial cache population
@@ -6119,6 +6130,9 @@ class MafwScheduler {
       get capGuard() { return (...a: any[]) => (self.capGuard as any)(...a); },
       get capGuardQuestion() { return (...a: any[]) => (self.capGuardQuestion as any)(...a); },
       get getScanService() { return (...a: any[]) => (self.getScanService as any)(...a); },
+      // Task 1：recall.context 的外部前台作用域（live：调度器实例不会更换，
+      // 但保持与其他 dep 相同的 getter 纪律）。
+      get scheduler() { return () => self.scheduler; },
       get getTerminalService() { return (...a: any[]) => (self.getTerminalService as any)(...a); },
       get getMafwCommandRegistry() { return (...a: any[]) => (self.getMafwCommandRegistry as any)(...a); },
       get resolvedProjectDir() { return (...a: any[]) => (self.resolvedProjectDir as any)(...a); },

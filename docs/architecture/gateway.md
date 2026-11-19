@@ -419,6 +419,11 @@ MCP 不提供 `mafw_answer_question`（E7 review 已删除，见下「human-only
 - **watchdog**：`timeoutMs` 从**开始执行**起算（排队等待不烧）；超时 reject
   `TaskTimeoutError` + 释放 key，被弃 fn 继续后台跑（release 语义）。
 - **统计**：`stats()` → `{ queued, running, byPriority }`（queued per priority）。
+- **外部前台作用域**：`enterForeground(): () => void` 让不走 `submit` 的前台工作
+  （HTTP handler）把同一 `foregroundInFlight` 计数加一，release 幂等（重复调用不
+  减到负、不在首次 release 后再放行）。它**只**改变 `defer-to-idle` 的启动资格：
+  已在运行的后台任务照常跑完（Node 单线程，调度没有抢占），不回退并发帽/优先级/
+  预算语义。边界 recall 用它把 queued 的快照构建与 index-scan 预取挡在请求之后。
 
 **消费方**：
 
@@ -427,6 +432,16 @@ MCP 不提供 `mafw_answer_question`（E7 review 已删除，见下「human-only
 | AutomationEngine `executeAction` | `background`（cron/event 触发）或 `foreground`（user/llm 触发——交互方在等），`mutexKey: action:<type>`，`skip` + 30min watchdog + taskOpts 预算 |
 | kernel.ts 快照构建 | `midground` + `defer-to-idle`，`mutexKey: 'snapshot'`（Phase A 的 drop→queue 升级为 queue+idle 让位） |
 | kernel.ts compaction flush | `background`，per-session `compact-flush:<sid>` key（与 cron action key 不同，互不阻塞） |
+| `routes/recall.ts` 边界 recall | 不走 `submit`；整个请求持有 `enterForeground()` 作用域（含 dense / search / FOK / render），`finally` 释放。只阻止新 `defer-to-idle` 启动，不抢占已运行任务 |
+| `IndexScanService.prefetch` | kernel 注入 `schedulePrefetch` 后：`background` + `defer-to-idle`，`mutexKey: 'snapshot'`（与快照构建互斥）；60s/session throttle 仍在调用时同步判定，无注入时保持旧 direct prefetch |
+
+**`snapshot` 键的跨 session 串行（2026-11-19）**：上表两处（kernel 快照构建、index-scan 预取）
+共用**同一个全局** `snapshot` 键，不是 per-session 键——同一时刻只跑一个，因此一个 running
+scan 会推迟所有 session 的 R8 构建（反之亦然）。scan 侧的 runtime `completion.complete()` 用
+`withTimeout(timeoutMs)`（`recall.scanTimeoutMs`）界住；超时 fail-open 进既有失败 cooldown，
+**不**回退直连 HTTP（避免同一把锁被二次持有）；单次 scan 的推迟上界约 `scanTimeoutMs`，
+**不含**任务在队列中等 mutex 的时间。被跳过的 prefetch 调度（同步 throw / submit reject）
+按 session 记 warn/debug，不补跑。
 
 **AutomationEngine 注册表**（同批改造）：action 注册从模块级全局 Map 改为实例所有
 （`registerAction` + taskOpts）；builtins（memory:decay/review/prune）在构造时注册并
@@ -451,8 +466,10 @@ kernel.ts 的 7 个管线 action 经 `setActionsProvider` 注册，`start()`/`re
   （`mutexKey: 'pod-event-wake'`），定时器 + notify 并发合流，关闭双投递竞态。
   2026-11-16 起它只做 outbox producer（每个 Pod event 一行 `pod-event:<eventId>`），
   预算/批量/重试统一由 `LeadOutbox` 负责，不再直接 `promptAsync`。
-- **边界 recall 100ms 路径**：最敏感延迟路径零改动（零新增延迟风险）；foreground 通道
-  在生产中由 user/llm 触发的 automation 消费。
+- **边界 recall 100ms 路径不改为 scheduler 任务**：异步 HTTP handler 的前台工作不适配
+  「promise 落定 = 任务完成」模型，也不该被并发帽/预算准入影响；它只通过
+  `enterForeground()` 借用前台计数，不 `submit`。foreground 通道在生产中仍由
+  user/llm 触发的 automation 消费。
 - HTTP 诊断端点（`/api/scheduler/stats`）留给 Phase D 诊断面合并。
 
 ---
@@ -2377,7 +2394,7 @@ WS **仍不回放**：greeting 只告诉客户端「实时流从哪个 seq 接�
 | Experience | `GET /api/experience/actions`（版本化 Action Descriptor，客户端不硬编码 runtime 名） |
 | Goal 编排 | `POST /api/work/{goalId}/validate`、`POST /api/control`（PAUSE/ABORT）、`GET /api/goals/:id/timeline`（节点泳道）、`POST /api/goals/:id/nodes/:runId/retry`、`POST /api/goals/:id/plan-approval` |
 | Mobile | `GET /api/mobile/pairing-code`、`POST /api/mobile/pairing/verify`、`GET /api/mobile/tts/artifacts/:id` |
-| 记忆 | `GET /api/recall/context`、`GET /api/recall/pinned`、`GET /api/recall/priors`、`POST /api/obs/capture`、`POST /api/memory/add`、`GET /api/memory/search`、`GET /api/memory/stats`（含管线心跳） |
+| 记忆 | `GET /api/recall/context`、`GET /api/recall/metrics`（分段计时/请求计数只读投影）、`GET /api/recall/pinned`、`GET /api/recall/priors`、`POST /api/obs/capture`、`POST /api/memory/add`、`GET /api/memory/search`、`GET /api/memory/stats`（含管线心跳） |
 | 基础工具 | `GET /api/tools`（六件套 spec 清单）、`POST /api/tools/execute`（通用执行，loopback 门） |
 | MCP | `POST/GET /mcp`（双传输） |
 | 运行时 | `GET /api/runtime`、`POST /api/runtime/switch`、`POST /api/runtime/restart-agent`、`POST /api/runtime/dry-event`（事件试衣间）、`POST /api/runtime/conformance`（场景一致性） |

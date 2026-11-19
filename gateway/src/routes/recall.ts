@@ -5,6 +5,7 @@
  *   GET /api/recall/pinned       — pinned 披露层（每轮注入，fail-open）
  *   GET /api/recall/priors       — W1 常驻先验块（L5 公理 + L2 失败模式谱，fail-open）
  *   GET /api/recall/context      — 边界 recall（100ms 契约，整体 fail-open 200）
+ *   GET /api/recall/metrics      — 分段计时/请求计数的只读投影（Task 3，内存快照）
  *
  * handler 体从 index.ts legacy 分支逐字迁移。四条 legacy 分支都用裸
  * startsWith('/api/recall/...')（无尾锚，`?query` 与 `/api/recall/pinnedX` 都会命中）；
@@ -27,8 +28,14 @@ import type { InstructionSyncService } from '../core/instructions/instruction-sy
 import type { LeadSessionRegistry } from '../core/manager/lead-session-registry';
 import type { MemoryService } from '../memory/service';
 import type { MemoryReceipt } from '../recall/receipt';
-import { recordRecallRequest, recordRecallStage } from '../recall/recall-metrics';
+import {
+  RECALL_STAGE_KEYS,
+  recordRecallRequest,
+  recordRecallStage,
+  snapshotRecallMetrics,
+} from '../recall/recall-metrics';
 import type { RecallSnapshotDecision } from '../recall/recall-metrics';
+import type { Scheduler } from '../scheduler';
 import type { RouteRegistry } from './registry';
 
 export interface RecallRouteDeps {
@@ -42,10 +49,31 @@ export interface RecallRouteDeps {
   mafwDir: () => string;
   getGatewayDb: () => GatewayDatabase;
   getScanService: () => IndexScanService | null;
+  /**
+   * Live scheduler handle (optional). The boundary route holds an external
+   * foreground scope for the duration of the request so queued
+   * `defer-to-idle` snapshot / index-scan work cannot start mid-recall.
+   * Absent ⇒ previous behavior (tests / older callers).
+   */
+  scheduler?: () => Pick<Scheduler, 'enterForeground'>;
   /** `memory.recalled` SSE fan-out; optional for tests / older callers. */
   broadcast?: (event: { type: string; sessionID?: string; properties?: unknown }) => void;
   /** Best-effort persistence; called after the response ends, never awaited. */
   saveReceipt?: (input: { sessionId: string; anchorKey: string; receipt: MemoryReceipt }) => unknown;
+}
+
+/**
+ * Task 1: acquire the unified scheduler's external foreground scope for one
+ * boundary request. Kept at module scope so the handler body stays small; the
+ * release is idempotent. Fail-open: a missing dep or a throwing getter must
+ * never affect the recall body.
+ */
+function acquireForegroundScope(deps: RecallRouteDeps): (() => void) | null {
+  try {
+    return deps.scheduler?.()?.enterForeground?.() ?? null;
+  } catch {
+    return null; // fail-open: scheduling must never affect recall
+  }
 }
 
 export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDeps): void {
@@ -110,6 +138,9 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
   // GET /api/recall/context —boundary recall for memory injection
   registry.attachHandler('recall.context', async (req: IncomingMessage, res: ServerResponse) => {
     const tStart = Date.now();
+    // Task 1：整个请求持有调度器外部前台作用域（见 finally；缺省 fail-open），
+    // 使 queued defer-to-idle snapshot / index-scan 不在 recall 进行中启动。
+    const releaseForeground = acquireForegroundScope(deps);
     // Task 1 instrumentation: the real recorder is installed once the cheap
     // per-turn blocks are built (below), so every exit path — empty query,
     // served body, error — records exactly one request outcome. Declared here
@@ -322,6 +353,7 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
         // never blow the contract — hence the short deadline + BM25 fallback.
         let denseScores: Map<string, number> | undefined;
         if (config.search.boundaryDense !== false) {
+          const tDense0 = Date.now();
           try {
             const { computeDenseScores } = require('../memory/embedding-runtime');
             const { withTimeout } = require('../recall/recall-context');
@@ -331,6 +363,10 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
             );
             denseScores = dense ?? undefined;
           } catch { /* fail-open: BM25 only */ }
+          // Task 3: `dense` covers query embedding + the deadline wait (a
+          // timed-out sidecar is still real boundary cost). Fail-open: a
+          // metrics bug must never change the fallback body.
+          recordRecallStage('dense', Date.now() - tDense0);
         }
         const tSearchCall = Date.now();
         memories = await searchRecallMemories(
@@ -342,6 +378,10 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
             retriever: config.search.defaultRetriever,
             scanSnapshot,
             denseScores,
+            // Task 3: live boundary only. `search` still records the whole
+            // call; graph/expansion/scan are the sub-stages inside it. The
+            // snapshot builder and other callers pass no observer.
+            onStage: recordRecallStage,
             // Live boundary path only: secondary (entity / multi-hop) passes
             // skip anchor-graph expansion to stay inside the 100ms contract.
             // The snapshot builder and every other caller keep the default
@@ -565,7 +605,41 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
       recordRequestOutcome?.();
       res.writeHead(200);
       res.end(JSON.stringify({ pointers: null }));
+    } finally {
+      // Task 1: leave the foreground scope after the body (success or
+      // fail-open) is written — deferred snapshot/scan work may start now.
+      try {
+        releaseForeground?.();
+      } catch { /* fail-open: a release glitch must never surface */ }
     }
+  });
+
+  // GET /api/recall/metrics — Task 3 read-only projection of the in-process
+  // boundary recall metrics. No parameters and no writes: `snapshotRecallMetrics`
+  // only reads bounded rings/counters and already returns a fresh copy, so a
+  // caller mutating the JSON cannot reach the internal state. Fail-open: a
+  // snapshot bug still answers 200 with the zeroed skeleton (schema-valid).
+  registry.attachHandler('recall.metrics', async (_req: IncomingMessage, res: ServerResponse) => {
+    let payload: unknown;
+    try {
+      payload = snapshotRecallMetrics();
+    } catch (err: any) {
+      log.warn(`[Recall] metrics snapshot failed: ${err?.message || err}`);
+      const zero = { count: 0, p50: 0, p95: 0, p99: 0, max: 0 };
+      payload = {
+        stages: Object.fromEntries(RECALL_STAGE_KEYS.map((key) => [key, { ...zero }])),
+        requests: {
+          total: 0,
+          visible: 0,
+          visibleRate: 1,
+          clientAborted: 0,
+          byRoute: { snapshot: 0, fallback: 0 },
+          bySnapshotDecision: {},
+        },
+      };
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(payload));
   });
 
   // POST /api/recall/topic — set/correct the current per-session attention topic.

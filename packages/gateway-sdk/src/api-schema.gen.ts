@@ -4061,6 +4061,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/recall/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["recall.metrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/recall/topic": {
         parameters: {
             query?: never;
@@ -38651,6 +38667,170 @@ export interface operations {
                 content: {
                     "application/json": {
                         pointers: string | null;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                        code?: string;
+                        message?: string;
+                        /** @constant */
+                        success?: false;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                        code?: string;
+                        message?: string;
+                        /** @constant */
+                        success?: false;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                        code?: string;
+                        message?: string;
+                        /** @constant */
+                        success?: false;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    "recall.metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        stages: {
+                            search: {
+                                count: number;
+                                p50: number;
+                                p95: number;
+                                p99: number;
+                                max: number;
+                            };
+                            graph: {
+                                count: number;
+                                p50: number;
+                                p95: number;
+                                p99: number;
+                                max: number;
+                            };
+                            expansion: {
+                                count: number;
+                                p50: number;
+                                p95: number;
+                                p99: number;
+                                max: number;
+                            };
+                            dense: {
+                                count: number;
+                                p50: number;
+                                p95: number;
+                                p99: number;
+                                max: number;
+                            };
+                            scan: {
+                                count: number;
+                                p50: number;
+                                p95: number;
+                                p99: number;
+                                max: number;
+                            };
+                            fok: {
+                                count: number;
+                                p50: number;
+                                p95: number;
+                                p99: number;
+                                max: number;
+                            };
+                            exact: {
+                                count: number;
+                                p50: number;
+                                p95: number;
+                                p99: number;
+                                max: number;
+                            };
+                            lexical: {
+                                count: number;
+                                p50: number;
+                                p95: number;
+                                p99: number;
+                                max: number;
+                            };
+                            neighbors: {
+                                count: number;
+                                p50: number;
+                                p95: number;
+                                p99: number;
+                                max: number;
+                            };
+                            render: {
+                                count: number;
+                                p50: number;
+                                p95: number;
+                                p99: number;
+                                max: number;
+                            };
+                            total: {
+                                count: number;
+                                p50: number;
+                                p95: number;
+                                p99: number;
+                                max: number;
+                            };
+                        };
+                        requests: {
+                            total: number;
+                            visible: number;
+                            visibleRate: number;
+                            clientAborted: number;
+                            byRoute: {
+                                snapshot: number;
+                                fallback: number;
+                            };
+                            bySnapshotDecision: {
+                                [key: string]: number;
+                            };
+                        };
                     };
                 };
             };

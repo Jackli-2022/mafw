@@ -57,6 +57,10 @@ LongMemEval 基准（session 粒度 R@10）：token 0.474 → **bm25 0.949**（6
 
 Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约的 `completion.complete()`（`completionApi` 能力，thunk 现读热切换安全），缺能力/失败时回退直连 HTTP（`runtime/completion-http.ts` 共享实现，`cacheable` 块映射 DashScope `cache_control: ephemeral`）。
 
+**scan 的有界等待与调度锁（2026-11-19 final fix）**：runtime channel 可能忽略 `request.timeoutMs`，而 scan→snapshot 链持有全局 `snapshot` scheduler 键，无界等待会冻结**所有** session 的快照构建。因此 channel 调用统一经 `recall/recall-context.ts` 的 `withTimeout(attempt, timeoutMs)`（`timeoutMs` = `recall.scanTimeoutMs`，默认 60s）界住：到期走既有失败 cooldown 并返回 null（fail-open），**不回退**直连 HTTP——直连另有一次完整 timeout，回退等于同一把锁被持有两倍时长；被放弃 attempt 的 late settle/reject 由 `withTimeout` 消费，不会成为 unhandled rejection。channel 在期限内 rejection 仍走原直连回退语义。注意 `withTimeout` 是运行时 import（`recall-context` 对本文件只做 `import type`，无运行时循环）。`prefetch` 调度被跳过（`schedulePrefetch` 同步 throw 或 submit 被拒）时按 session 记 `log.warn` / `log.debug`（含 sessionID 与错误），行为仍是跳过且不补跑。
+
+**跨 session 串行副作用（同批记录）**：scan 预取与 R8 快照构建共用同一个全局 `snapshot` mutex 键（`kernel.ts` 两处 submit），因此它们是**跨 session 串行**的——一个正在运行的 scan 会推迟**所有** session 的快照构建，反之亦然（不按 sessionID 分键，也不并发）。有界等待把单个 scan 造成的推迟上界压到约 `recall.scanTimeoutMs`；这个上界**不包含**该任务在 scheduler 队列里的排队等待时间（队列在 mutex 释放/前台作用域退出后才推进）。串行是有意代价：同一时刻只有一个任务触碰检索缓存，换取一致性；提高并发需要 per-session 键或写时快照，不在本切片。
+
 **检索入口一致性（2026-11-17）**：`searchScored` 省略 retriever 时按 `bm25` 分支执行；REST `/api/memory/search` 使用共享 `memoryService.harmonicIndex` 并默认 `config.search.defaultRetriever`；MCP `mafw_search_hybrid` 保留真实候选分数，不再把首轮/迭代轮分数压成常数 1；snapshot reranker 输入保留 `cue_anchors`。scan 预取结果携带构建时的 `query/builtAt`，自动 recall 合并前用 containment 做 topic-shift 校验；无 `query` 的旧快照保持兼容。
 
 **图扩展通道分离（2026-11-18）**：`searchScored` 的图扩展（PPR 与 legacy hop-greedy）只为**新增的 graph-only 候选**写 `score: 0, graphScore: gs`——它们没有词面证据，只保留图通道，单条最高为 `rerankGraphWeight` 档，因此不可能压过最强字面 seed，主要用于尾部补全；经过归一化后 `nbv` 偏低的弱 seed 仍可能被其超过。已在 `scored` 里的词面候选（包括超出 `candidateCap`、未进 seed 窗口的条目）只追加 `graphScore`，不会被降级成 graph-only。REST `/api/memory/search` 额外显式 `graphExpand: false`：它是原始索引面，排序不随共享 index 上挂的图存储状态漂移（parity 前该路由每请求新建无图 index）；MCP 与 boundary recall 按各自路径消费图扩展。
@@ -64,6 +68,11 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约的 `comple
 **BM25 倒排 postings 缓存（2026-11-18）**：`bm25RawScored` 不再为每个 query token 扫描全库，而是懒构建 `term → 物理文档下标` postings 并跨 expansion/FOK pass 复用；按物理文档累加和输出，重复 id 也保持旧 df/N 与逐文档评分。缓存由 `searchVersion`、entries 数组引用和文档文本检查共同失效，覆盖 add/remove 与 in-place cue/title 变化；未来若对 entries 原地 splice/sort/reverse 必须同步失效。冻结 40 query 的 id/顺序/分数保持 40/40 一致；live 40 条 AUTO p50/p95 从 307/436ms 降至 134/230ms，质量指标不变。详见 `docs/releases/2026-11-18-bm25-postings-latency.md`。
 
 **实时召回分段计时与确定性缓存（2026-11-19）**：`routes/recall.ts` 新增 `recall-metrics.ts` 的纯内存分段观测（`search/fok/exact/lexical/neighbors/render/total` + `route=snapshot|fallback` + `snapshotDecision` + `clientAborted`），仅用于诊断，不影响召回结果；`findExactRecallEvidence` 在传入 `searchVersion` 时启用内存索引缓存（归一化 cue/title/identifier，按版本与 entries/anchors 引用失效），未传版本保持旧纯函数；`AnchorGraphStore` / `CoactivationGraphStore` 新增有界 per-node LRU 邻接缓存（默认开启，`total_changes()` + `PRAGMA data_version` 失效），冷启动不做整图预载。三项均以逐 id/weight 等价为验收；live 40 条 AUTO p50/p95 约 162/226ms → 130/181ms，质量不变。详见 `docs/releases/2026-11-19-recall-stage-metrics-caches.md`。
+
+- **子阶段扩展（同日后继切片）**：stage keys 增加 `dense` 与 `scan`（旧 keys 全保留）。`dense` 由 route 记录，覆盖 `computeDenseScores` **加上 deadline 等待**（sidecar busy 超时也是真实边界成本）；`searchRecallMemories` 新增可选 `SearchRecallOptions.onStage`，分别上报 `graph`（首轮 `fetchScored`，即 BM25 + base graph）/ `expansion`（`expandQuery`，含其二级 pass）/ `scan`（`mergeScanResults`）。外层 `search` 仍是整次 `searchRecallMemories` 的耗时，**不是**子阶段之和的替代，也不与 `total` 重复计数。
+- **observer 是纯观测**：每次只包裹既有调用并吞掉自身异常（fail-open），不改评分/过滤；observer 抛错时逐 id/score 与未观测运行完全一致。只有 live boundary search 传 `onStage: recordRecallStage`；snapshot builder 与其他调用方**不传**，保持原行为。
+- **读出口**：`GET /api/recall/metrics`（operation `recall.metrics`，catalog tags `internal`）无参数、无写操作，200 返回 `snapshotRecallMetrics()` 的新鲜 JSON 副本（stages 全 key + requests 计数）；观测崩溃回零值骨架，仍 200。
+- **与调度器的关系**：边界请求持有 scheduler 外部前台作用域（`Scheduler.enterForeground`，见 `gateway.md`），只阻止**新**的 `defer-to-idle` snapshot/index-scan 启动；已在运行的后台任务照常完成，不可抢占（Node 单线程，无抢占）。
 
 ### 压缩
 

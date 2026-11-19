@@ -1949,7 +1949,7 @@ describe('api-contract: E10i-E2 goal / event explicit error statuses', () => {
   });
 });
 
-describe('api-contract: E10c-1 memory / recall / lead read response schema (8 ops)', () => {
+describe('api-contract: E10c-1 memory / recall / lead read response schema (9 ops)', () => {
   const findOp = (operationId: string): any => {
     for (const methods of Object.values<any>(contract.paths)) {
       for (const candidate of Object.values<any>(methods)) {
@@ -1979,6 +1979,10 @@ describe('api-contract: E10c-1 memory / recall / lead read response schema (8 op
     'recall.instructions': {
       fields: ['managed', 'revision', 'missing', 'staleKeys', 'erroredKeys', 'blocks'],
     },
+    // 2026-11-19: internal diagnostics read — top-level freshness copy of the
+    // in-memory stage observer (`stages` is keyed by the full stage set,
+    // `requests` by route/decision counters). Both keys are required.
+    'recall.metrics': { fields: ['stages', 'requests'] },
     'recall.priors': { fields: ['block', 'used', 'budget'] },
     'lead.recall': {
       fields: ['candidates'],
@@ -1993,7 +1997,7 @@ describe('api-contract: E10c-1 memory / recall / lead read response schema (8 op
     },
   };
 
-  test('seven flat ops expose a 200 JSON schema with properties (not a whole-response widening)', () => {
+  test('eight flat ops expose a 200 JSON schema with properties (not a whole-response widening)', () => {
     const problems: string[] = [];
     for (const [operationId, spec] of Object.entries(EXPECTED)) {
       const op = findOp(operationId);

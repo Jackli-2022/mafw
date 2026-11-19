@@ -463,3 +463,97 @@ describe('Scheduler admission seam', () => {
     expect(budgetChecker).not.toHaveBeenCalled();
   });
 });
+
+// External foreground scope: a caller that does foreground work OUTSIDE
+// `submit` (the HTTP boundary-recall handler) must be able to hold the same
+// `foregroundInFlight` state, so queued `defer-to-idle` snapshot/index-scan
+// tasks cannot start while the request is still being served.
+describe('Scheduler external foreground scope', () => {
+  const idleTask = {
+    priority: 'midground' as const,
+    mutexKey: 'snapshot',
+    strategy: 'defer-to-idle' as const,
+  };
+
+  it('enterForeground blocks defer-to-idle until the returned release runs', async () => {
+    const s = new Scheduler();
+    const release = s.enterForeground();
+    let started = 0;
+    const deferred = s.submit(idleTask, async () => { started++; });
+
+    expect(started).toBe(0); // queued, not started
+    expect(s.stats().queued).toBe(1);
+    expect(s.stats().running).toBe(0);
+
+    release();
+
+    expect(started).toBe(1); // release pumps synchronously
+    await deferred;
+    expect(s.stats().queued).toBe(0);
+    expect(s.stats().running).toBe(0);
+  });
+
+  it('nested scopes only unblock after the outermost release', async () => {
+    const s = new Scheduler();
+    const outer = s.enterForeground();
+    const inner = s.enterForeground();
+    let started = 0;
+    const deferred = s.submit(idleTask, async () => { started++; });
+
+    inner();
+    expect(started).toBe(0); // outer scope still holds
+
+    outer();
+    expect(started).toBe(1);
+    await deferred;
+  });
+
+  it('release is idempotent: a repeated release never frees a sibling scope', async () => {
+    const s = new Scheduler();
+    const outer = s.enterForeground();
+    const inner = s.enterForeground();
+    let started = 0;
+    const deferred = s.submit(idleTask, async () => { started++; });
+
+    inner();
+    inner(); // duplicate release of the inner scope
+    expect(started).toBe(0); // outer scope still holds
+
+    outer();
+    expect(started).toBe(1);
+    await deferred;
+  });
+
+  it('over-release cannot make the count negative (a later foreground task still defers idle work)', async () => {
+    const s = new Scheduler();
+    const outer = s.enterForeground();
+    outer();
+    outer(); // duplicate after the count already reached 0
+    // If the duplicate had decremented to -1, the foreground task below would
+    // bring the counter back to 0 and the defer-to-idle task would start.
+    const gate = manual();
+    const fg = s.submit({ priority: 'foreground', strategy: 'queue' }, () => gate.promise);
+    let started = 0;
+    const deferred = s.submit(idleTask, async () => { started++; });
+
+    expect(started).toBe(0);
+
+    gate.resolve(undefined);
+    await fg;
+    await deferred;
+    expect(started).toBe(1);
+  });
+
+  it('external scope does not block non-deferred background work', async () => {
+    const s = new Scheduler();
+    const release = s.enterForeground();
+    let ran = false;
+    try {
+      const t = s.submit({ priority: 'background', strategy: 'queue' }, async () => { ran = true; });
+      expect(ran).toBe(true);
+      await t;
+    } finally {
+      release();
+    }
+  });
+});

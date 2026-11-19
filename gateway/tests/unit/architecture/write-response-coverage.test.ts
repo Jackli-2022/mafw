@@ -29,9 +29,9 @@ const WRITE_OPS_TOTAL = 200;
 /** Write ops that declare a `response` schema (all but `tts.speakStream`). */
 const COVERED_TOTAL = 199;
 
-/** Whole-catalog size and response coverage after E10h (127 pre-wave → 323). */
-const CATALOG_OPS_TOTAL = 336;
-const CATALOG_RESPONSES_TOTAL = 329;
+/** Whole-catalog size and response coverage after E10h (127 pre-wave → 330). */
+const CATALOG_OPS_TOTAL = 337;
+const CATALOG_RESPONSES_TOTAL = 330;
 
 /**
  * Write ops whose 200 is *not* a JSON body, with the reason it is excluded.
@@ -159,7 +159,7 @@ describe('write-response-coverage: ledger for catalog write responses (E10h)', (
     expect(unaccounted).toEqual([]);
   });
 
-  it('whole-catalog arithmetic: 329/336 with the 7 gaps fully accounted for', () => {
+  it('whole-catalog arithmetic: 330/337 with the 7 gaps fully accounted for', () => {
     const ops = opViews();
     expect(ops).toHaveLength(CATALOG_OPS_TOTAL);
     const covered = ops.filter((op) => Boolean(op.response)).map((op) => op.operationId);
