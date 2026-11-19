@@ -98,4 +98,22 @@ describe('PairingService v2 (E5a-3)', () => {
     expect(new URL(service.generatePairingCode('127.0.0.1').url).searchParams.get('url'))
       .toBe('http://new-lan:3000');
   });
+
+  it('adds relayUrl/fp only when a relay endpoint is configured', () => {
+    service = new PairingService({ apiToken: 'x', tailscaleUrl: 'http://pc:3000' });
+    const fp = 'ab'.repeat(32);
+
+    const bare = new URL(service.generatePairingCode('127.0.0.1').url).searchParams;
+    expect(bare.get('relayUrl')).toBeNull();
+    expect(bare.get('fp')).toBeNull();
+
+    service.setRelayEndpoint({ url: 'https://room.relay.example.com/', fingerprint: fp });
+    const linked = new URL(service.generatePairingCode('127.0.0.1').url).searchParams;
+    expect(linked.get('url')).toBe('http://pc:3000');
+    expect(linked.get('relayUrl')).toBe('https://room.relay.example.com');
+    expect(linked.get('fp')).toBe(fp);
+
+    service.setRelayEndpoint(null);
+    expect(new URL(service.generatePairingCode('127.0.0.1').url).searchParams.get('relayUrl')).toBeNull();
+  });
 });

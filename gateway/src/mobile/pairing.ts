@@ -34,6 +34,7 @@ export class PairingService {
   private rateLimits: Map<string, RateLimitBucket> = new Map();
   private configuredBaseUrl: string;
   private overrideBaseUrl: string | null = null;
+  private relayEndpoint: { url: string; fingerprint: string } | null = null;
   private readonly ttlMs: number;
   private readonly rateLimit: number;
   private cleanupTimer: NodeJS.Timeout | null = null;
@@ -70,6 +71,21 @@ export class PairingService {
   }
 
   /**
+   * M2: advertise the stable relay room + the gateway certificate fingerprint.
+   * `url` stays the LAN/Tailscale address; the app may prefer relay when LAN
+   * is unreachable. Passing null restores the pre-relay link shape.
+   */
+  setRelayEndpoint(endpoint: { url: string; fingerprint: string } | null): void {
+    if (!endpoint) {
+      this.relayEndpoint = null;
+      return;
+    }
+    const url = endpoint.url.trim().replace(/\/+$/, '');
+    const fingerprint = endpoint.fingerprint.trim().toLowerCase();
+    this.relayEndpoint = url && fingerprint ? { url, fingerprint } : null;
+  }
+
+  /**
    * Generate a one-time pairing URL (v2). Rate-limit applies to non-local
    * callers only; a true `local` principal is exempt because the operator is
    * local and trusted (spec §6.1). A relayed caller reaches us over a loopback
@@ -99,6 +115,10 @@ export class PairingService {
       exp: String(exp),
       nonce,
     });
+    if (this.relayEndpoint) {
+      params.set('relayUrl', this.relayEndpoint.url);
+      params.set('fp', this.relayEndpoint.fingerprint);
+    }
 
     return { url: `orcalore://pair?${params.toString()}` };
   }
