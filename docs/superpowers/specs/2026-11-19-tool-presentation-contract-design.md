@@ -265,7 +265,27 @@ ToolRegistry.entry(name)                  // 只读快照，调试/测试用
 - 内部组件自己的 gutter（行号、文件图标、缩进代码）不算“退格”；只要求第一个可读字符对齐。
 - 测试：折叠标题 left 与展开正文第一行 left 差 ≤1px。
 
+### 4.4 CodeMode（`execute`）的渲染
+
+**数据边界**：`metadata.toolCalls[]` 只有 `tool / status / input`；没有 per-call output。只有 `state.output`（history 还要走 `partOutputText`）。所以 **不渲染“每个子调用的结果卡”**，只渲染子调用列表 + 最终输出。
+
+- 折叠态（一行）：
+  - 标题：`Code Mode 执行`
+  - object：失败调用优先，否则最近一次子调用的 `label(args)`（如 `mafw_python [code=…]`）
+  - meta：`N 次调用`；有失败时追加 `有失败`（err tone）
+  - status：`pending/running/completed/error`
+- 展开态（`renderBody`，保留现有 `MafwExecuteCard` 正文）：
+  - 子调用行：状态字形 + 工具图标/名称 + 参数摘要；点击仅展开 **input JSON**（不是结果）；
+  - 最终输出：`ToolSections`（KV/code/list），8KB / 200 行限幅，超出显示“展开全部”；
+  - 运行中：`defaultOpen: true`，子调用行实时更新；不解析最终输出；
+  - 空态：运行中“等待脚本调用工具…”，完成“脚本未调用工具”；
+  - 失败：失败行红色；最终错误文本按 `state.output`/`error` 展示。
+- `present`：`collapsed` 由 `executeCalls` / `executeHeaderSubtitle` 生成；`expanded = { body: "custom", defaultOpen: true }`；`renderBody` 指向 `ExecuteBody`。
+- **不**为子调用行伪造结果；如果产品必须逐个子调用结果，使用 `codemode: false`（直连 tool part）或等 upstream callID。
+- 脚本代码不内联到折叠行；需要时后续加“查看脚本”动作，默认不展开 `input.code`。
+
 ## 5. 迁移波次
+
 
 
 
