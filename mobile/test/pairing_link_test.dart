@@ -137,4 +137,42 @@ void main() {
       expect(parsePairingLink('').error, PairingLinkError.malformed);
     });
   });
+
+  group('relay endpoint (M3)', () {
+    test('v2 link carries relayUrl and fp additively', () {
+      final fp = 'ab' * 32;
+      final result = parsePairingLink(_link(
+        url: 'http://192.168.1.5:3000',
+        token: null,
+        v: '2',
+        extra: {
+          'relayUrl': 'https://room.relay.example.com',
+          'fp': fp,
+        },
+      ));
+
+      expect(result.ok, isTrue);
+      expect(result.link!.url, 'http://192.168.1.5:3000');
+      expect(result.link!.relayUrl, 'https://room.relay.example.com');
+      expect(result.link!.fingerprint, fp);
+    });
+
+    test('rejects an invalid relay URL or fingerprint pair', () {
+      for (final extra in [
+        {'relayUrl': 'http://room.relay.example.com', 'fp': 'ab' * 32},
+        {'relayUrl': 'https://room.relay.example.com', 'fp': 'not-a-fingerprint'},
+        {'relayUrl': 'https://room.relay.example.com'},
+      ]) {
+        final result = parsePairingLink(_link(token: null, v: '2', extra: extra));
+        expect(result.error, PairingLinkError.malformed, reason: '$extra');
+      }
+    });
+
+    test('links without relay fields keep working', () {
+      final result = parsePairingLink(_link(token: null, v: '2'));
+      expect(result.ok, isTrue);
+      expect(result.link!.relayUrl, '');
+      expect(result.link!.fingerprint, '');
+    });
+  });
 }

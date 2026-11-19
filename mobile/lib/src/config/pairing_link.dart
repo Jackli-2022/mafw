@@ -43,11 +43,19 @@ class PairingLink {
   /// Link format version (`1` = legacy shared token, `2` = device token).
   final int version;
 
+  /// Stable relay Room URL (`https://<roomId>-<routeSecret>.<domain>`), if any.
+  final String relayUrl;
+
+  /// SHA-256 fingerprint (lowercase hex) of the gateway's Room certificate.
+  final String fingerprint;
+
   const PairingLink({
     required this.url,
     required this.token,
     required this.nonce,
     this.version = 2,
+    this.relayUrl = '',
+    this.fingerprint = '',
   });
 }
 
@@ -106,9 +114,21 @@ PairingLinkResult parsePairingLink(String raw, {DateTime? now}) {
     final v = params['v'];
     final exp = params['exp'];
     final nonce = params['nonce'];
+    final relayUrl = (params['relayUrl'] ?? '').replaceAll(RegExp(r'/+$'), '');
+    final fingerprint = (params['fp'] ?? '').trim().toLowerCase();
 
     if (url == null || url.isEmpty || exp == null || nonce == null || nonce.isEmpty) {
       return PairingLinkResult.malformed;
+    }
+    if (relayUrl.isEmpty != fingerprint.isEmpty) return PairingLinkResult.malformed;
+    if (relayUrl.isNotEmpty) {
+      final relay = Uri.tryParse(relayUrl);
+      if (relay == null || relay.scheme != 'https' || relay.host.isEmpty) {
+        return PairingLinkResult.malformed;
+      }
+      if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(fingerprint)) {
+        return PairingLinkResult.malformed;
+      }
     }
 
     final int version;
@@ -129,7 +149,14 @@ PairingLinkResult parsePairingLink(String raw, {DateTime? now}) {
     if (nowMs > expMs) return PairingLinkResult.expired;
 
     return PairingLinkResult.success(
-      PairingLink(url: url, token: token, nonce: nonce, version: version),
+      PairingLink(
+        url: url,
+        token: token,
+        nonce: nonce,
+        version: version,
+        relayUrl: relayUrl,
+        fingerprint: fingerprint,
+      ),
     );
   } catch (_) {
     return PairingLinkResult.malformed;
