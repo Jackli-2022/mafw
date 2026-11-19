@@ -1,0 +1,384 @@
+{
+  "bootstrap": true,
+  "notAPublicBenchmark": true,
+  "evaluator": "gateway/src/recall/session-quality.ts",
+  "codeFingerprint": {
+    "algorithm": "sha256",
+    "digest": "e2c9a0a7d1a1c4b76a7f596f08a2c709ed8dfb0df3d6d878618a0e0f137eb8dc",
+    "files": [
+      {
+        "path": "gateway/src/recall/session-quality.ts",
+        "sha256": "54eede32a3cd56aafc45949dab3cba69dfad75c42ddb982a0f7df91a83d0fd10"
+      },
+      {
+        "path": "gateway/src/recall/snapshot-current-query.ts",
+        "sha256": "dd2db30e8898f44683e7ee566cd1ed095ff21a329cd65de87b1d3e53fdd23286"
+      },
+      {
+        "path": "gateway/src/recall/lexical-support.ts",
+        "sha256": "39df92077708a43c4b0c863814c514d0da3e45f75e5d6c7d9f90610299d11abc"
+      },
+      {
+        "path": "gateway/src/recall/recall-snapshot.ts",
+        "sha256": "d07b7d61a71f6f97bcaa55a79304034c3613e6321afe396603f50d6078a18326"
+      },
+      {
+        "path": "gateway/src/recall/inject-format.ts",
+        "sha256": "0d3634b5c1e5602e9015e4c910e40f63ea7cab59d530d6ca735df8ec1961c20e"
+      },
+      {
+        "path": "gateway/src/recall/verbatim-recall.ts",
+        "sha256": "cb685df4a14456e5b3d76197d5ee3ecb638563914b37d6ef2e62e8c147105953"
+      }
+    ]
+  },
+  "command": "npx ts-node --project gateway/tsconfig.json evaluation/session-recall/run.ts --out evaluation/session-recall/baseline.json --generated-at 2026-11-19T09:23:37.940Z",
+  "configSource": "frozen",
+  "snapshotConfig": {
+    "enabled": true,
+    "ttlMs": 600000,
+    "topicShiftThreshold": 0.25,
+    "t1MaxChars": 600
+  },
+  "fixture": {
+    "path": "evaluation/session-recall/fixtures.json",
+    "version": 1,
+    "status": "bootstrap",
+    "frozenAt": "2026-11-19",
+    "seed": "Temp/opencode/session-recall-seed.json (read-only; no live DB reads)",
+    "notes": [
+      "BOOTSTRAP set: 3 frozen real/reconstructed cases. It is NOT a benchmark and cannot support generalisation claims; the spec still requires 20-50 dev cases plus an isolated held-out set.",
+      "Annotations are per (memory id, rendered role) with labels answer|context|noise|repeat|stale-or-conflict.",
+      "Expected answer families freeze both a reference statement and the equivalent memory ids; answer coverage requires an ANCHOR display (neighbour-only never counts).",
+      "The two negative cases are kept exactly as the user reported them: their noise bodies are still displayed by the current serve path, and the annotations were NOT relaxed to manufacture an improvement.",
+      "These fixtures are frozen: do not regenerate them from the live DB or from current ranks. A new case gets a new id and its own provenance.",
+      "snapshotConfig is the capture-time serve config, frozen with the fixtures. The runner never reads the live gateway config; an explicit --snapshot-config JSON override is recorded as configSource=override.",
+      "Provenance honesty: quality-negative is captured verbatim (stored block served unchanged). research-negative and model-preference are REPLAYED: their served blocks are re-rendered from the frozen pool by the real adapter. For model-preference the serve-time query was not captured, so currentQuery is the turn-212 user text used as a stand-in (not the recorded input of that serve)."
+    ],
+    "cases": 3
+  },
+  "generatedAt": "2026-11-19T09:23:37.940Z",
+  "summary": {
+    "cases": 3,
+    "answerableCases": 1,
+    "noAnswerControls": 2,
+    "serve": {
+      "served": 3,
+      "filtered": 2,
+      "fallback": 0,
+      "notServed": 0,
+      "decisions": {
+        "use": 3
+      },
+      "fallbackReasons": {}
+    },
+    "usefulAnchorPrecision": {
+      "numerator": 2,
+      "denominator": 8,
+      "value": 0.25
+    },
+    "answerCoverage": {
+      "numerator": 1,
+      "denominator": 1,
+      "value": 1
+    },
+    "falseDisplay": {
+      "numerator": 2,
+      "denominator": 2,
+      "value": 1
+    },
+    "legitimateSuppression": {
+      "numerator": 0,
+      "denominator": 2,
+      "value": 0
+    },
+    "neighborPrecision": {
+      "numerator": 0,
+      "denominator": 2,
+      "value": 0
+    },
+    "t1Repeat": {
+      "numerator": 3,
+      "denominator": 3,
+      "value": 1
+    },
+    "falseDisplayIds": [
+      "q15k2p",
+      "7lsgaw",
+      "q15k2p",
+      "7lsgaw",
+      "cifyzn"
+    ],
+    "suppressedIds": [],
+    "unannotatedDisplayed": [],
+    "measurementComplete": true,
+    "warnings": []
+  },
+  "cases": [
+    {
+      "id": "quality-negative-2026-11-19",
+      "origin": "seed:qualityNegative — user-reported real mis-display, snapshot + rendered block captured (snapshot built 2026-11-19T08:22:16.515Z)",
+      "currentQuery": "现在记忆系统质量和效率",
+      "isNoAnswerControl": true,
+      "decision": "use",
+      "served": true,
+      "fallbackReason": null,
+      "kept": {
+        "anchors": [
+          "q15k2p",
+          "7lsgaw"
+        ],
+        "neighbors": [],
+        "t1": [],
+        "filtered": false
+      },
+      "servedBlock": "- #mem-q15k2p 功能完成并通过review后先提交再总结\n- #mem-7lsgaw MAFW提升记忆质量与检索效率时先调研再差距分析后动手",
+      "displayed": [
+        {
+          "id": "q15k2p",
+          "role": "anchor",
+          "label": "noise"
+        },
+        {
+          "id": "7lsgaw",
+          "role": "anchor",
+          "label": "noise"
+        }
+      ],
+      "unannotatedDisplayed": [],
+      "measurementComplete": true,
+      "suppressed": [],
+      "families": [],
+      "falseDisplayIds": [
+        "q15k2p",
+        "7lsgaw"
+      ],
+      "metrics": {
+        "usefulAnchorPrecision": {
+          "numerator": 0,
+          "denominator": 2,
+          "value": 0
+        },
+        "answerCoverage": {
+          "numerator": 0,
+          "denominator": 0,
+          "value": null
+        },
+        "falseDisplay": {
+          "numerator": 1,
+          "denominator": 1,
+          "value": 1
+        },
+        "legitimateSuppression": {
+          "numerator": 0,
+          "denominator": 0,
+          "value": null
+        },
+        "neighborPrecision": {
+          "numerator": 0,
+          "denominator": 0,
+          "value": null
+        },
+        "t1Repeat": {
+          "numerator": 0,
+          "denominator": 0,
+          "value": null
+        }
+      }
+    },
+    {
+      "id": "research-negative-2026-11-19",
+      "origin": "seed:researchNegative — user-reported off-topic block, snapshot built 2026-11-19T08:32:14.335Z; REPLAYED: the seed did not capture the rendered block, so it is re-rendered from the frozen pool with formatRecallContext (+ the recorded T1 line)",
+      "currentQuery": "分析一下，调研一下提升质量",
+      "isNoAnswerControl": true,
+      "decision": "use",
+      "served": true,
+      "fallbackReason": null,
+      "kept": {
+        "anchors": [
+          "q15k2p",
+          "7lsgaw",
+          "cifyzn"
+        ],
+        "neighbors": [],
+        "t1": [],
+        "filtered": true
+      },
+      "servedBlock": "<recall>\n[联想线索 · 依据前请验证：取全文 → mafw_get_memory(\"#mem-后6位\")；检索更多 → mafw_search_hybrid]\n- #mem-q15k2p [2026-11-11 procedural] \"功能完成并通过review后先提交再总结；验证摘要按新增测试数/总通过数汇报\" (E:?)\n- #mem-7lsgaw [2026-11-11 procedural] \"MAFW提升记忆质量与检索效率时先调研再差距分析后动手\" (E:?)\n- #mem-cifyzn [2026-11-19 procedural] \"长期记忆质量用预注册公共基准与隐私回归集分别报告\" (E:?)\n</recall>",
+      "displayed": [
+        {
+          "id": "q15k2p",
+          "role": "anchor",
+          "label": "noise"
+        },
+        {
+          "id": "7lsgaw",
+          "role": "anchor",
+          "label": "noise"
+        },
+        {
+          "id": "cifyzn",
+          "role": "anchor",
+          "label": "noise"
+        }
+      ],
+      "unannotatedDisplayed": [],
+      "measurementComplete": true,
+      "suppressed": [],
+      "families": [],
+      "falseDisplayIds": [
+        "q15k2p",
+        "7lsgaw",
+        "cifyzn"
+      ],
+      "metrics": {
+        "usefulAnchorPrecision": {
+          "numerator": 0,
+          "denominator": 3,
+          "value": 0
+        },
+        "answerCoverage": {
+          "numerator": 0,
+          "denominator": 0,
+          "value": null
+        },
+        "falseDisplay": {
+          "numerator": 1,
+          "denominator": 1,
+          "value": 1
+        },
+        "legitimateSuppression": {
+          "numerator": 0,
+          "denominator": 0,
+          "value": null
+        },
+        "neighborPrecision": {
+          "numerator": 0,
+          "denominator": 0,
+          "value": null
+        },
+        "t1Repeat": {
+          "numerator": 0,
+          "denominator": 0,
+          "value": null
+        }
+      }
+    },
+    {
+      "id": "model-preference-live-2026-11-19",
+      "origin": "seed:modelPreferenceSnapshot — live mixed snapshot (pool + rolling query + T1 lines) captured at 2026-11-19T09:03:47.311Z; REPLAYED: the serve-time query was not captured, so currentQuery is the turn-212 user text used as a stand-in, and the served block is re-rendered by the real adapter",
+      "currentQuery": "看看怎么做，执行交给子代理，gateway deepseek v4.1 flash",
+      "isNoAnswerControl": false,
+      "decision": "use",
+      "served": true,
+      "fallbackReason": null,
+      "kept": {
+        "anchors": [
+          "mem_1795064682252_yvk0df",
+          "mem_1795014293850_nzi4oy",
+          "mem_1791169315762_xqjlsn"
+        ],
+        "neighbors": [
+          "mem_1795064666806_rqgqkh",
+          "mem_1791169320089_ls3vcr"
+        ],
+        "t1": [
+          "t1t_f98b4a0c-1927-4596-a5c6-1fa2d292ef57",
+          "t1t_600a545d-a44d-4210-8ba5-6306b6c4d997",
+          "t1l_a3bbc240fec6b79b767e"
+        ],
+        "filtered": true
+      },
+      "servedBlock": "<recall>\n[联想线索 · 依据前请验证：取全文 → mafw_get_memory(\"#mem-后6位\")；检索更多 → mafw_search_hybrid]\n- #mem-yvk0df [2026-11-19 semantic] \"实施交子代理 deepseek v4.1 flash\" (E:0.8)\n  ↳ - #mem-rqgqkh [2026-11-19 semantic] \"边界 recall 词汇支持守卫\" (E:0.8)\n- #mem-nzi4oy [2026-11-18 semantic] \"子代理实施固定用 deepseek-v4.1-flash\" (E:0.6)\n- #mem-xqjlsn [2026-10-05 semantic] \"MAFW 会话与功能切片收尾遗留的未提交改动流和未跟踪文件会被 checkout/切分支静默丢失，收尾必须立即 commit 并逐流归属确认、遗留修复跨批次在下一发布统一带入（flylink _debug_*.py 清理债、MAFW 调研报告未落盘、v4.12.0 一次带入三笔跨切片遗留均属此模式）。\" (E:1.0)\n  ↳ - #mem-ls3vcr [2026-10-05 semantic] \"MAFW 调研/报告只存在当日会话输出中即丢失且仅靠记住教训无法阻止复发（审批体系调研与 desktop-ux-refactor 切片4 调研对照证明），蒸馏进日期前缀文档 docs/research/ 或 docs/superpowers/specs/ 加 mafw_add_memory 必须是会话内当下执行的强制收尾检查点。\" (E:1.0)\n[知识更新 · 同一事实有多个版本时，优先采用离问题时间最近的信息，不要把旧版本当成现状]\n</recall>\n[t1|t1t_f98b4a0c-1927-4596-a5c6-1fa2d292ef57] …eepseek-v4.1-flash\",\"name\":\"DeepSe…\n[t1|t1t_600a545d-a44d-4210-8ba5-6306b6c4d997] …执行交给子代理，gateway deepseek v4.1 flas…\n[t1|t1l_a3bbc240fec6b79b767e] 模型用 gateway deepseekv4.1 flash | [object Object],[object Object]; [object Object]",
+      "displayed": [
+        {
+          "id": "mem_1795064682252_yvk0df",
+          "role": "anchor",
+          "label": "answer"
+        },
+        {
+          "id": "mem_1795064666806_rqgqkh",
+          "role": "neighbor",
+          "label": "noise"
+        },
+        {
+          "id": "mem_1795014293850_nzi4oy",
+          "role": "anchor",
+          "label": "answer"
+        },
+        {
+          "id": "mem_1791169315762_xqjlsn",
+          "role": "anchor",
+          "label": "noise"
+        },
+        {
+          "id": "mem_1791169320089_ls3vcr",
+          "role": "neighbor",
+          "label": "noise"
+        },
+        {
+          "id": "t1t_f98b4a0c-1927-4596-a5c6-1fa2d292ef57",
+          "role": "t1",
+          "label": "repeat"
+        },
+        {
+          "id": "t1t_600a545d-a44d-4210-8ba5-6306b6c4d997",
+          "role": "t1",
+          "label": "repeat"
+        },
+        {
+          "id": "t1l_a3bbc240fec6b79b767e",
+          "role": "t1",
+          "label": "repeat"
+        }
+      ],
+      "unannotatedDisplayed": [],
+      "measurementComplete": true,
+      "suppressed": [],
+      "families": [
+        {
+          "id": "subagent-model-preference",
+          "statement": "子代理实施固定用 gateway deepseek-v4.1-flash",
+          "covered": true,
+          "matchedIds": [
+            "mem_1795064682252_yvk0df",
+            "mem_1795014293850_nzi4oy"
+          ]
+        }
+      ],
+      "falseDisplayIds": [],
+      "metrics": {
+        "usefulAnchorPrecision": {
+          "numerator": 2,
+          "denominator": 3,
+          "value": 0.6667
+        },
+        "answerCoverage": {
+          "numerator": 1,
+          "denominator": 1,
+          "value": 1
+        },
+        "falseDisplay": {
+          "numerator": 0,
+          "denominator": 0,
+          "value": null
+        },
+        "legitimateSuppression": {
+          "numerator": 0,
+          "denominator": 2,
+          "value": 0
+        },
+        "neighborPrecision": {
+          "numerator": 0,
+          "denominator": 2,
+          "value": 0
+        },
+        "t1Repeat": {
+          "numerator": 3,
+          "denominator": 3,
+          "value": 1
+        }
+      }
+    }
+  ]
+}

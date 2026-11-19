@@ -1,0 +1,561 @@
+{
+  "version": 1,
+  "status": "bootstrap",
+  "notAPublicBenchmark": true,
+  "frozenAt": "2026-11-19",
+  "snapshotConfig": {
+    "enabled": true,
+    "ttlMs": 600000,
+    "topicShiftThreshold": 0.25,
+    "t1MaxChars": 600
+  },
+  "seed": "Temp/opencode/session-recall-seed.json (read-only; no live DB reads)",
+  "notes": [
+    "BOOTSTRAP set: 3 frozen real/reconstructed cases. It is NOT a benchmark and cannot support generalisation claims; the spec still requires 20-50 dev cases plus an isolated held-out set.",
+    "Annotations are per (memory id, rendered role) with labels answer|context|noise|repeat|stale-or-conflict.",
+    "Expected answer families freeze both a reference statement and the equivalent memory ids; answer coverage requires an ANCHOR display (neighbour-only never counts).",
+    "The two negative cases are kept exactly as the user reported them: their noise bodies are still displayed by the current serve path, and the annotations were NOT relaxed to manufacture an improvement.",
+    "These fixtures are frozen: do not regenerate them from the live DB or from current ranks. A new case gets a new id and its own provenance.",
+    "snapshotConfig is the capture-time serve config, frozen with the fixtures. The runner never reads the live gateway config; an explicit --snapshot-config JSON override is recorded as configSource=override.",
+    "Provenance honesty: quality-negative is captured verbatim (stored block served unchanged). research-negative and model-preference are REPLAYED: their served blocks are re-rendered from the frozen pool by the real adapter. For model-preference the serve-time query was not captured, so currentQuery is the turn-212 user text used as a stand-in (not the recorded input of that serve)."
+  ],
+  "cases": [
+    {
+      "id": "quality-negative-2026-11-19",
+      "origin": "seed:qualityNegative — user-reported real mis-display, snapshot + rendered block captured (snapshot built 2026-11-19T08:22:16.515Z)",
+      "currentQuery": "现在记忆系统质量和效率",
+      "now": "2026-11-19T08:22:30.000Z",
+      "isNoAnswerControl": true,
+      "snapshot": {
+        "query": "现在记忆系统质量和效率",
+        "block": "- #mem-q15k2p 功能完成并通过review后先提交再总结\n- #mem-7lsgaw MAFW提升记忆质量与检索效率时先调研再差距分析后动手",
+        "ids": [
+          "q15k2p",
+          "7lsgaw"
+        ],
+        "builtAt": "2026-11-19T08:22:16.515Z",
+        "fokStatus": "inject",
+        "top1prob": 0.99,
+        "memories": [
+          {
+            "id": "q15k2p",
+            "abstraction": "功能完成并通过review后先提交再总结；验证摘要按新增测试数/总通过数汇报",
+            "type": "procedural",
+            "date": "2026-11-11",
+            "cue_anchors": [
+              "质量",
+              "交付"
+            ]
+          },
+          {
+            "id": "7lsgaw",
+            "abstraction": "MAFW提升记忆质量与检索效率时先调研再差距分析后动手",
+            "type": "procedural",
+            "date": "2026-11-11",
+            "cue_anchors": [
+              "记忆质量",
+              "检索效率"
+            ]
+          }
+        ],
+        "t1Hits": [],
+        "t1Rendered": false
+      },
+      "annotations": [
+        {
+          "id": "q15k2p",
+          "role": "anchor",
+          "label": "noise"
+        },
+        {
+          "id": "7lsgaw",
+          "role": "anchor",
+          "label": "noise"
+        }
+      ],
+      "expectedAnswerFamilies": []
+    },
+    {
+      "id": "research-negative-2026-11-19",
+      "origin": "seed:researchNegative — user-reported off-topic block, snapshot built 2026-11-19T08:32:14.335Z; REPLAYED: the seed did not capture the rendered block, so it is re-rendered from the frozen pool with formatRecallContext (+ the recorded T1 line)",
+      "currentQuery": "分析一下，调研一下提升质量",
+      "now": "2026-11-19T08:32:30.000Z",
+      "isNoAnswerControl": true,
+      "snapshot": {
+        "query": "分析一下，调研一下提升质量",
+        "block": "<recall>\n[联想线索 · 依据前请验证：取全文 → mafw_get_memory(\"#mem-后6位\")]\n- #mem-q15k2p \"功能完成并通过review后先提交再总结；验证摘要按新增测试数/总通过数汇报\" (E:0.8)\n- #mem-7lsgaw \"MAFW提升记忆质量与检索效率时先调研再差距分析后动手\" (E:0.8)\n- #mem-cifyzn \"长期记忆质量用预注册公共基准与隐私回归集分别报告\" (E:0.8)\n[t1|t1t_600a545d-a44d-4210-8ba5-6306b6c4d997] 看看怎么做，执行交给子代理，gateway deepseek v4.1 flash\n</recall>",
+        "ids": [
+          "q15k2p",
+          "7lsgaw",
+          "cifyzn",
+          "o4tutz"
+        ],
+        "builtAt": "2026-11-19T08:32:14.335Z",
+        "fokStatus": "inject",
+        "top1prob": 0.99,
+        "memories": [
+          {
+            "id": "q15k2p",
+            "abstraction": "功能完成并通过review后先提交再总结；验证摘要按新增测试数/总通过数汇报",
+            "type": "procedural",
+            "date": "2026-11-11",
+            "cue_anchors": [
+              "质量",
+              "交付"
+            ]
+          },
+          {
+            "id": "7lsgaw",
+            "abstraction": "MAFW提升记忆质量与检索效率时先调研再差距分析后动手",
+            "type": "procedural",
+            "date": "2026-11-11",
+            "cue_anchors": [
+              "记忆质量",
+              "检索效率"
+            ]
+          },
+          {
+            "id": "cifyzn",
+            "abstraction": "长期记忆质量用预注册公共基准与隐私回归集分别报告",
+            "type": "procedural",
+            "date": "2026-11-19",
+            "cue_anchors": [
+              "记忆质量",
+              "评测"
+            ]
+          },
+          {
+            "id": "o4tutz",
+            "abstraction": "Snapshot指标需区分索引规模，勿直接外推不同规模",
+            "type": "procedural",
+            "date": "2026-11-19",
+            "cue_anchors": [
+              "Snapshot",
+              "指标"
+            ]
+          }
+        ],
+        "t1Hits": [
+          {
+            "sessionId": "ses_e7444718cffeVJ3eJOTAReq8F0",
+            "turnId": 212,
+            "traceId": "t1t_600a545d-a44d-4210-8ba5-6306b6c4d997",
+            "cosine": 0.9,
+            "excerpt": "看看怎么做，执行交给子代理，gateway deepseek v4.1 flash"
+          }
+        ],
+        "t1Rendered": true
+      },
+      "annotations": [
+        {
+          "id": "q15k2p",
+          "role": "anchor",
+          "label": "noise"
+        },
+        {
+          "id": "7lsgaw",
+          "role": "anchor",
+          "label": "noise"
+        },
+        {
+          "id": "cifyzn",
+          "role": "anchor",
+          "label": "noise"
+        },
+        {
+          "id": "o4tutz",
+          "role": "anchor",
+          "label": "noise"
+        },
+        {
+          "id": "t1t_600a545d-a44d-4210-8ba5-6306b6c4d997",
+          "role": "t1",
+          "label": "repeat"
+        }
+      ],
+      "expectedAnswerFamilies": []
+    },
+    {
+      "id": "model-preference-live-2026-11-19",
+      "origin": "seed:modelPreferenceSnapshot — live mixed snapshot (pool + rolling query + T1 lines) captured at 2026-11-19T09:03:47.311Z; REPLAYED: the serve-time query was not captured, so currentQuery is the turn-212 user text used as a stand-in, and the served block is re-rendered by the real adapter",
+      "currentQuery": "看看怎么做，执行交给子代理，gateway deepseek v4.1 flash",
+      "now": "2026-11-19T09:04:00.000Z",
+      "isNoAnswerControl": false,
+      "snapshot": {
+        "query": "提交 现在记忆系统质量和效率 分析一下，调研一下提升质量 可以，执行交给子代理，gateway deepseek v4.1 flash",
+        "block": "<recall>\n[联想线索 · 依据前请验证：取全文 → mafw_get_memory(\"#mem-后6位\")；检索更多 → mafw_search_hybrid]\n- #mem-yvk0df [2026-11-19 semantic] \"实施交子代理 deepseek v4.1 flash\" (E:0.8)\n  ↳ - #mem-rqgqkh [2026-11-19 semantic] \"边界 recall 词汇支持守卫\" (E:0.8)\n  ↳ - #mem-2ay162 [2026-11-19 procedural] \"composer 生成提示条与 phase 管线已删除\" (E:0.8)\n- #mem-nzi4oy [2026-11-18 semantic] \"子代理实施固定用 deepseek-v4.1-flash\" (E:0.6)\n  ↳ - #mem-jviztm [2026-11-18 procedural] \"skill 加载 bash 缓存路径报错\" (E:0.6)\n- #mem-xqjlsn [2026-10-05 semantic] \"MAFW 会话与功能切片收尾遗留的未提交改动流和未跟踪文件会被 checkout/切分支静默丢失，收尾必须立即 commit 并逐流归属确认、遗留修复跨批次在下一发布统一带入（flylink _debug_*.py 清理债、MAFW 调研报告未落盘、v4.12.0 一次带入三笔跨切片遗留均属此模式）。\" (E:1.0)\n  ↳ - #mem-ls3vcr [2026-10-05 semantic] \"MAFW 调研/报告只存在当日会话输出中即丢失且仅靠记住教训无法阻止复发（审批体系调研与 desktop-ux-refactor 切片4 调研对照证明），蒸馏进日期前缀文档 docs/research/ 或 docs/superpowers/specs/ 加 mafw_add_memory 必须是会话内当下执行的强制收尾检查点。\" (E:1.0)\n[知识更新 · 同一事实有多个版本时，优先采用离问题时间最近的信息，不要把旧版本当成现状]\n</recall>\n[t1|t1t_f98b4a0c-1927-4596-a5c6-1fa2d292ef57] …eepseek-v4.1-flash\",\"name\":\"DeepSe…\n[t1|t1t_600a545d-a44d-4210-8ba5-6306b6c4d997] …执行交给子代理，gateway deepseek v4.1 flas…\n[t1|t1l_a3bbc240fec6b79b767e] 模型用 gateway deepseekv4.1 flash | [object Object],[object Object]; [object Object]",
+        "ids": [
+          "mem_1795064682252_yvk0df",
+          "mem_1795014293850_nzi4oy",
+          "mem_1791169315762_xqjlsn"
+        ],
+        "builtAt": "2026-11-19T09:03:47.311Z",
+        "fokStatus": "inject",
+        "top1prob": 0.9959830922387932,
+        "memories": [
+          {
+            "id": "mem_1795064682252_yvk0df",
+            "type": "semantic",
+            "abstraction": "实施交子代理 deepseek v4.1 flash",
+            "date": "2026-11-19T05:04:42.153Z",
+            "energy": 0.75,
+            "cue_anchors": [
+              "pref:delegation=subagent-executes",
+              "pref:subagent-model=gateway/deepseek-v4.1-flash",
+              "subagent",
+              "deepseek v4.1 flash",
+              "MAFW",
+              "date:2026-11",
+              "deepseek",
+              "deepseek-v4.1-flash",
+              "volcengine/deepseek-v4.1-flash",
+              "kimi-code-plan-cn/k3.1-pro"
+            ]
+          },
+          {
+            "id": "mem_1795014293850_nzi4oy",
+            "type": "semantic",
+            "abstraction": "子代理实施固定用 deepseek-v4.1-flash",
+            "date": "2026-11-18T15:04:53.735Z",
+            "energy": 0.6048538227209194,
+            "cue_anchors": [
+              "pref:subagent-model=gateway/deepseek-v4.1-flash",
+              "deepseek-v4.1-flash",
+              "volcengine/deepseek-v4.1-flash",
+              "gateway",
+              "子代理",
+              "subagent",
+              "subagent-driven-development",
+              "systematic-debugging"
+            ]
+          },
+          {
+            "id": "mem_1791169315762_xqjlsn",
+            "type": "semantic",
+            "abstraction": "MAFW 会话与功能切片收尾遗留的未提交改动流和未跟踪文件会被 checkout/切分支静默丢失，收尾必须立即 commit 并逐流归属确认、遗留修复跨批次在下一发布统一带入（flylink _debug_*.py 清理债、MAFW 调研报告未落盘、v4.12.0 一次带入三笔跨切片遗留均属此模式）。",
+            "date": "2026-10-05T03:01:55.762Z",
+            "energy": 0.999443860053397,
+            "cue_anchors": [
+              "MAFW",
+              "flylink",
+              "checkout",
+              "未提交改动",
+              "uncommitted",
+              "切片收尾",
+              "v4.12.0",
+              "遗留改动归属"
+            ]
+          },
+          {
+            "id": "mem_1795064666806_rqgqkh",
+            "type": "semantic",
+            "abstraction": "边界 recall 词汇支持守卫",
+            "date": "2026-11-19T05:04:26.395Z",
+            "energy": 0.75,
+            "cue_anchors": [
+              "gateway/src/recall/lexical-support.ts",
+              "tokenizeBM25",
+              "FOK gate",
+              "CJK bigram",
+              "exact-evidence",
+              "verified:2026-11-19",
+              "memory_value",
+              "top1/mean",
+              "evaluateRecallFokZone",
+              "selectLexicallySupportedCandidates",
+              "hasCandidateLexicalSupport",
+              "splitIdentifierParts",
+              "findExactRecallEvidence",
+              "applyExactRecallEvidence",
+              "fokStatus",
+              "evidenceLimit"
+            ],
+            "neighborOf": "mem_1795064682252_yvk0df"
+          },
+          {
+            "id": "mem_1795064863527_2ay162",
+            "type": "procedural",
+            "abstraction": "composer 生成提示条与 phase 管线已删除",
+            "date": "2026-11-19T05:07:43.411Z",
+            "energy": 0.8,
+            "cue_anchors": [
+              "mafw-phase-bar",
+              "正在生成",
+              "setPhase",
+              "workspace.phase",
+              "d.phase",
+              "dead-code.test.ts",
+              "useSendMessage",
+              "tests/dead-code.test.ts",
+              "dead-code.test"
+            ],
+            "neighborOf": "mem_1795064682252_yvk0df"
+          },
+          {
+            "id": "mem_1795014293945_jviztm",
+            "type": "procedural",
+            "abstraction": "skill 加载 bash 缓存路径报错",
+            "date": "2026-11-18T15:04:53.738Z",
+            "energy": 0.6,
+            "cue_anchors": [
+              "/bin/bash",
+              "git-superpowers-0958a5557860",
+              "C:/Users/15524/.cache/opencode/npm",
+              "opencode",
+              "skill",
+              "superpowers",
+              "Windows",
+              "systematic-debugging",
+              "bin/bash",
+              "Users/15524/.cache/opencode/npm/git-superpowers-0958a5557860"
+            ],
+            "neighborOf": "mem_1795014293850_nzi4oy"
+          },
+          {
+            "id": "mem_1791169320089_ls3vcr",
+            "type": "semantic",
+            "abstraction": "MAFW 调研/报告只存在当日会话输出中即丢失且仅靠记住教训无法阻止复发（审批体系调研与 desktop-ux-refactor 切片4 调研对照证明），蒸馏进日期前缀文档 docs/research/ 或 docs/superpowers/specs/ 加 mafw_add_memory 必须是会话内当下执行的强制收尾检查点。",
+            "date": "2026-10-05T03:02:00.089Z",
+            "energy": 0.9999311714141961,
+            "cue_anchors": [
+              "MAFW",
+              "调研报告",
+              "docs/research",
+              "docs/superpowers/specs",
+              "收尾检查点",
+              "research persistence",
+              "会话输出丢失",
+              "mafw_add_memory"
+            ],
+            "neighborOf": "mem_1791169315762_xqjlsn"
+          },
+          {
+            "id": "mem_1791168200824_gn0tt8",
+            "type": "semantic",
+            "abstraction": "runtime 认知面迁移四阶段计划",
+            "date": "2026-10-05T02:43:20.531Z",
+            "energy": 0.8,
+            "cue_anchors": [
+              "runtime",
+              "认知",
+              "知面",
+              "面迁",
+              "迁移",
+              "recoverState",
+              "registerTool",
+              "registerCommand",
+              "autoApprove",
+              "before_agent_start",
+              "message_end",
+              "tool_result",
+              "P0/P1/P2",
+              "state/status/config-loader",
+              "opencode/plugins",
+              "opencode/client",
+              "context/before_agent_start/message_end",
+              "tool_result/registerTool",
+              "suites/1512",
+              "docs/research/2026-10-03-agent-runtime-sdk-survey.md",
+              "2026-10-03-agent-runtime-sdk-survey.md"
+            ],
+            "neighborOf": "mem_1791169315762_xqjlsn"
+          },
+          {
+            "id": "mem_1791174451189_tlg3au",
+            "type": "semantic",
+            "abstraction": "待运行类实验记忆必须闭环：实验跑完后用落盘结果（r74f-sigma-knob.json 的 τ50）回填实测数字并 supersedes 旧预期/捏造条目——r74f 捏造 sigmoid 曲线长期存活于库内误导检索的教训证明，不闭环的预期值会污染后续会话的采信。",
+            "date": "2026-10-05T04:27:31.189Z",
+            "energy": 0.6891055917006906,
+            "cue_anchors": [
+              "r74f",
+              "tau50",
+              "supersede",
+              "flylink",
+              "closure",
+              "JSON",
+              "r74f-sigma-knob.json"
+            ],
+            "neighborOf": "mem_1791174451459_cggbt2"
+          },
+          {
+            "id": "mem_1791174451693_41vkjs",
+            "type": "semantic",
+            "abstraction": "用户在 flylink 实验工作的稳定偏好：任务严格串行按序推进；方案决策要求文献锚点背书+预注册解耦臂设计（如选 DMTS 延迟探测方案 D，显式接受约 +250 次真实 Jev 调用的成本换因果可控，方案确认后立即落盘计划文档）；实验噪声必须种子化可复现以支持多种子证伪对照。",
+            "date": "2026-10-05T04:27:31.693Z",
+            "energy": 0.7877867694410813,
+            "cue_anchors": [
+              "pref:task-execution=serial",
+              "pref:experiment-design=literature-anchored-pre-registered",
+              "pref:noise=seeded-reproducible",
+              "flylink",
+              "serial",
+              "seeded"
+            ],
+            "neighborOf": "mem_1791174451459_cggbt2"
+          },
+          {
+            "id": "mem_1791173958822_7vtewg",
+            "type": "semantic",
+            "abstraction": "谐波记忆 cue_anchors 中文锚点必须用二字 bigram 禁单字并同时含实体名与主题检索词（单字锚点如[\"探\",\"针\",\"后\"]多跳价值低），且约定落地时必须用回填脚本迁移存量数据——只约束新写入修不了旧库。",
+            "date": "2026-10-05T04:19:18.822Z",
+            "energy": 0.6770357844958664,
+            "cue_anchors": [
+              "cue_anchors",
+              "bigram",
+              "中文锚点",
+              "谐波记忆",
+              "harvest-cue-anchors",
+              "~/.mafw",
+              "多跳检索"
+            ],
+            "neighborOf": "mem_1791173962906_it5csm"
+          },
+          {
+            "id": "mem_1791173966702_ekx4nt",
+            "type": "semantic",
+            "abstraction": "排查『用户报告但 HEAD 不可复现』的 MAFW desktop 缺陷有可复用方法（像素采样+BrowserWindow 标志检查+git 考古证伪源码回归+核对构建产物时间戳，陈旧 out/ 资源是零源码痕迹的隐形根因），且对症状语义不明的报告（如'三个'窗口/实例）应先向用户澄清具体所指再假设检验。",
+            "date": "2026-10-05T04:19:26.702Z",
+            "energy": 0.7389849184679125,
+            "cue_anchors": [
+              "mafw desktop",
+              "desktop",
+              "不可复现",
+              "restoreMainWindows",
+              "windowIds",
+              "out/",
+              "排查方法"
+            ],
+            "neighborOf": "mem_1791173962906_it5csm"
+          }
+        ],
+        "t1Hits": [
+          {
+            "sessionId": "ses_e7444718cffeVJ3eJOTAReq8F0",
+            "turnId": 140,
+            "traceId": "t1t_f98b4a0c-1927-4596-a5c6-1fa2d292ef57",
+            "cosine": 0,
+            "excerpt": "…eepseek-v4.1-flash\",\"name\":\"DeepSe…",
+            "score": 0.030536130536130537,
+            "sources": [
+              "lexical",
+              "feature"
+            ]
+          },
+          {
+            "sessionId": "ses_e7444718cffeVJ3eJOTAReq8F0",
+            "turnId": 210,
+            "traceId": "t1t_600a545d-a44d-4210-8ba5-6306b6c4d997",
+            "cosine": 0,
+            "excerpt": "…执行交给子代理，gateway deepseek v4.1 flas…",
+            "score": 0.016666666666666666,
+            "sources": [
+              "lexical"
+            ]
+          },
+          {
+            "sessionId": "ses_e7444718cffeVJ3eJOTAReq8F0",
+            "turnId": 5,
+            "traceId": "t1l_a3bbc240fec6b79b767e",
+            "cosine": 0,
+            "excerpt": "模型用 gateway deepseekv4.1 flash | [object Object],[object Object]; [object Object]",
+            "score": 0.016666666666666666,
+            "sources": [
+              "feature"
+            ]
+          }
+        ],
+        "t1Rendered": true
+      },
+      "annotations": [
+        {
+          "id": "mem_1795064682252_yvk0df",
+          "role": "anchor",
+          "label": "answer"
+        },
+        {
+          "id": "mem_1795014293850_nzi4oy",
+          "role": "anchor",
+          "label": "answer"
+        },
+        {
+          "id": "mem_1791169315762_xqjlsn",
+          "role": "anchor",
+          "label": "noise"
+        },
+        {
+          "id": "mem_1795064666806_rqgqkh",
+          "role": "neighbor",
+          "label": "noise"
+        },
+        {
+          "id": "mem_1795064863527_2ay162",
+          "role": "neighbor",
+          "label": "noise"
+        },
+        {
+          "id": "mem_1795014293945_jviztm",
+          "role": "neighbor",
+          "label": "noise"
+        },
+        {
+          "id": "mem_1791169320089_ls3vcr",
+          "role": "neighbor",
+          "label": "noise"
+        },
+        {
+          "id": "mem_1791168200824_gn0tt8",
+          "role": "neighbor",
+          "label": "noise"
+        },
+        {
+          "id": "mem_1791174451189_tlg3au",
+          "role": "neighbor",
+          "label": "noise"
+        },
+        {
+          "id": "mem_1791174451693_41vkjs",
+          "role": "neighbor",
+          "label": "noise"
+        },
+        {
+          "id": "mem_1791173958822_7vtewg",
+          "role": "neighbor",
+          "label": "noise"
+        },
+        {
+          "id": "mem_1791173966702_ekx4nt",
+          "role": "neighbor",
+          "label": "noise"
+        },
+        {
+          "id": "t1t_f98b4a0c-1927-4596-a5c6-1fa2d292ef57",
+          "role": "t1",
+          "label": "repeat",
+          "note": "User instruction / model-config echo already carried by the answer anchors; the serve gate kept it because its identifier phrase does not equal the anchor title spelling."
+        },
+        {
+          "id": "t1t_600a545d-a44d-4210-8ba5-6306b6c4d997",
+          "role": "t1",
+          "label": "repeat",
+          "note": "User instruction / model-config echo already carried by the answer anchors; the serve gate kept it because its identifier phrase does not equal the anchor title spelling."
+        },
+        {
+          "id": "t1l_a3bbc240fec6b79b767e",
+          "role": "t1",
+          "label": "repeat",
+          "note": "User instruction / model-config echo already carried by the answer anchors; the serve gate kept it because its identifier phrase does not equal the anchor title spelling."
+        }
+      ],
+      "expectedAnswerFamilies": [
+        {
+          "id": "subagent-model-preference",
+          "statement": "子代理实施固定用 gateway deepseek-v4.1-flash",
+          "equivalentIds": [
+            "mem_1795064682252_yvk0df",
+            "mem_1795014293850_nzi4oy"
+          ]
+        }
+      ]
+    }
+  ]
+}

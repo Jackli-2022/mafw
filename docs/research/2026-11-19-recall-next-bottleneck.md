@@ -233,3 +233,21 @@ Artifacts：`personal-recall-current-2026-11-19-r1.json`、`personal-recall-curr
 3. 后台任务造成的尾部尖峰。
 
 现有 `search` 聚合计时无法继续拆分这三者；在补充分段观测前，不应再把所有 session 慢请求归因于后台竞争，也不应通过放宽 containment/FOK 来提高 snapshot serve 率。
+
+## 9. 前台隔离部署后的真实样本（08:32）
+
+`a485cb1d1` 部署后，metrics endpoint 工作正常，但聚合值被 80 次固定集请求主导，必须与真实 session 分开解释。固定集完成后的 8 次真实请求中：
+
+- 7 次 live fallback：debug search p50/p95/max = **270/716/716ms**，近似总耗时 p50/p95 = **285/738ms**，7/7 超过 100ms；
+- 1 次 snapshot serve：近似总耗时 **4ms**；观察到的 serve 率为 1/8（小样本）；
+- 日志可见 fallback → IndexScan → snapshot build 的顺序，未再看到三者同时运行，说明新调度/互斥按设计生效；
+- 但 fallback 在无并发构建时仍达到 716ms，再次证明稳定成本不是后台竞争所能解释的。
+
+质量上出现一个新的真实负样本：当前 query 为“现在记忆系统质量和效率”，08:32:08 当前会话记录为 `snapshot served ... filtered=true`，但展示的是 2026-11-11 的交付流程/子代理分工记忆（`q15k2p`、`7lsgaw`），而不是当前召回质量、指标或性能结论。它们可能因“质量/系统”等词面重叠通过支持校验，却不具备当前问题的 answerability。
+
+因此：
+
+1. 固定 40 条 false injection=0/10 仍只代表负例控制，不能覆盖真实 session 的语义误展示；
+2. 当前轮 lexical gate 能过滤零词面支持，但不能证明“候选足以回答当前 query”；
+3. 下一质量切片应优先做 answerability/support verifier 与当前任务 working set，而不是提高 snapshot serve 率；
+4. 下一性能切片应使用新 `graph/expansion/scan/fok/total` 指标定位稳定成本，前台隔离只解决新后台启动这一类竞争。

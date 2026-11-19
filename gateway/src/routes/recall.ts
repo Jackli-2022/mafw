@@ -298,8 +298,17 @@ export function attachRecallRoutes(registry: RouteRegistry, deps: RecallRouteDep
                 // A4 hit-proxy: log the probability-gated injection as a
                 // calibration sample — hit when a pointer is later redeemed
                 // via mafw_get_memory (join by id within TTL).
+                //
+                // Only the UNFILTERED serve is a valid sample: `served.top1prob`
+                // ranks the snapshot's rolling window, and once the
+                // current-query gate dropped anchors/T1 rows the served ids are
+                // a different set — joining them would label that probability
+                // with evidence it never ranked (a redemption of a surviving
+                // pointer would count as its "hit"). The filtered serve still
+                // records exposure + receipt with its filtered ids; only this
+                // calibration sample is skipped.
                 try {
-                  if (Number.isFinite(served.top1prob)) {
+                  if (!adapted.kept.filtered && Number.isFinite(served.top1prob)) {
                     const { appendFokEvent } = require('../recall/fok-samples');
                     appendFokEvent({
                       e: 'inj',

@@ -464,8 +464,10 @@ test('a served snapshot only exposes the current-query-supported block/ids/memor
     expect(body.pointers).not.toContain('[t1|t1t_keep]');
     // exposure (ACT-R settlement) only for the pointers that were served
     expect(retrievalBuffer.drain().map((e) => e.id)).toEqual(['mem_keep_000001']);
-    // FOK hit-proxy sample carries the filtered ids
-    expect(fokSamples.appendFokEvent).toHaveBeenCalledWith(expect.objectContaining({ ids: ['mem_keep_000001'] }));
+    // FOK hit-proxy sample is NOT written: the rolling-window top1prob ranked a
+    // different id set than the one actually served, so the join would label
+    // that probability with evidence it never earned.
+    expect(fokSamples.appendFokEvent).not.toHaveBeenCalled();
     // receipt mirrors the filtered anchors + T1
     expect(receipts).toHaveLength(1);
     expect(receipts[0].receipt.counts).toEqual({ memories: 1, t1: 0 });
@@ -475,6 +477,52 @@ test('a served snapshot only exposes the current-query-supported block/ids/memor
     // the adapter/re-render cost lands on the render stage, not search
     expect(metrics.stages.render.count).toBe(1);
     expect(metrics.stages.search.count).toBe(0);
+  } finally {
+    config.search.snapshot = { ...config.search.snapshot, enabled: false };
+  }
+});
+
+test('an unfiltered snapshot serve still writes the original-window FOK sample', async () => {
+  config.search.snapshot = { ...config.search.snapshot, enabled: true };
+  decideSnapshotUse.mockReturnValue('use');
+  fok.mockReturnValue({ zone: 'inject', evaluated: true });
+  // Every anchor is supported → the adapter serves the stored block verbatim
+  // (`kept.filtered === false`). The rolling-window top1prob and the served ids
+  // still describe the same ranking, so the calibration sample stays valid.
+  lexical.selectLexicallySupportedCandidates.mockImplementation((candidates: unknown[]) => ({
+    applicable: true,
+    supported: candidates,
+  }));
+
+  try {
+    const { handler, req, res } = makeHarness({
+      snapshotValue: {
+        builtAt: new Date().toISOString(),
+        query: 'hello world window',
+        block: '<recall>both anchors</recall>',
+        fokStatus: 'inject',
+        top1prob: 0.72,
+        ids: ['mem_keep_000001', 'mem_keep_000002'],
+        memories: [
+          { id: 'mem_keep_000001', abstraction: 'hello alpha' },
+          { id: 'mem_keep_000002', abstraction: 'world beta' },
+        ],
+        t1Hits: [],
+        t1Rendered: false,
+      },
+    });
+    await handler(req, res);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(JSON.parse(res.body!).pointers).toContain('both anchors');
+    expect(snapshotRecallMetrics().requests.byRoute).toEqual({ snapshot: 1, fallback: 0 });
+    expect(fokSamples.appendFokEvent).toHaveBeenCalledTimes(1);
+    expect(fokSamples.appendFokEvent).toHaveBeenCalledWith(expect.objectContaining({
+      e: 'inj',
+      top1prob: 0.72,
+      zone: 'inject',
+      ids: ['mem_keep_000001', 'mem_keep_000002'],
+    }));
   } finally {
     config.search.snapshot = { ...config.search.snapshot, enabled: false };
   }
