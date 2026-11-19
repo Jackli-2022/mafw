@@ -65,6 +65,30 @@ describe("diff tools use the shared presentation path", () => {
   })
 })
 
+describe("rich tools use the shared presentation path", () => {
+  const block = (name: string, next?: string) => {
+    const start = componentSource.indexOf(`name: "${name}"`)
+    const end = next ? componentSource.indexOf(`name: "${next}"`, start) : undefined
+    return componentSource.slice(start, end)
+  }
+
+  test("task/question/skill register present and body slots", () => {
+    expect(block("task", "bash")).toContain("present: presentTask")
+    expect(block("task", "bash")).toContain("renderBody: TaskBody")
+    expect(block("question", "skill")).toContain("present: presentQuestion")
+    expect(block("question", "skill")).toContain("renderBody: QuestionBody")
+    expect(block("skill")).toContain("present: presentSkill")
+    expect(block("task", "bash")).not.toContain("BasicTool")
+    expect(block("task", "bash")).not.toContain("task-tool-card")
+  })
+
+  test("the presentation context resolves agent and child session", () => {
+    expect(componentSource).toContain("agent: (name) => presentationAgent(name, data.store.agent)")
+    expect(componentSource).toContain("subagentSession:")
+    expect(componentSource).toContain("taskSession(taskInput")
+  })
+})
+
 describe("rich card bodies", () => {
   test("task and question keep body-only components", () => {
     expect(componentSource).toContain("function TaskBody")

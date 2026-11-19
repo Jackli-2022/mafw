@@ -42,14 +42,12 @@ import { Icon as IconV2 } from "@mafw/ui/v2/icon"
 import { IconButtonV2 } from "@mafw/ui/v2/icon-button-v2"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
-import { Spinner } from "@mafw/ui/spinner"
 import { TextShimmer } from "@mafw/ui/text-shimmer"
 import { AnimatedCountList } from "./tool-count-summary"
 import { ToolStatusTitle } from "./tool-status-title"
 import { animate } from "motion"
 import { useLocation } from "@solidjs/router"
 import { attached, inline, kind, typeLabel, type MafwFilePart } from "./message-file"
-import { SessionProgressIndicatorV2 } from "../v2/components/session-progress-indicator-v2"
 
 /** 摄取层契约：`metadata.files` 已是规范文件 diff 数组（renderer 不再猜形状）。 */
 export { canonicalMetadataFiles } from "./diff-tool-model"
@@ -428,6 +426,15 @@ function taskAgent(
     color,
     v2Color,
   }
+}
+
+/** Presenter-facing agent shape: undefined when the input has no agent. */
+function presentationAgent(
+  raw: string | undefined,
+  list?: readonly { name: string; color?: string }[],
+): { name: string; color?: string; v2Color?: string } | undefined {
+  const resolved = taskAgent(raw, list)
+  return resolved.name ? { name: resolved.name, color: resolved.color, v2Color: resolved.v2Color } : undefined
 }
 
 function agentColor(value: string | undefined, themeColors: Record<string, string>) {
@@ -1542,12 +1549,17 @@ function QuestionBody(props: ToolProps) {
 export function ToolPresentationFallback(props: ToolProps & { entry: ToolRegistryEntry }) {
   const data = useData()
   const i18n = useI18n()
+  const location = useLocation()
   const context = (): ToolPresentationContext => ({
     props,
     directory: data.directory,
     mode: "chat",
     t: (key, params) => i18n.t(key, params),
     sessionHref: data.sessionHref,
+    agent: (name) => presentationAgent(name, data.store.agent),
+    subagentSession: (taskInput) =>
+      (props.metadata.sessionID as string | undefined) ??
+      taskSession(taskInput, location.pathname, data.store.session, data.store.agent),
   })
   const presentation = createMemo(() => resolvePresentation(props.entry.present?.(context()), context()))
   return (
@@ -1569,7 +1581,14 @@ import { ToolRegistry, shouldUsePresentation, type ToolRegistryEntry } from "./t
 import { resolveToolRender, resolveToolEntry, readPathInput, TOOL_NAME_ALIASES } from "./tool-canonical"
 import { isTaskPart } from "./tool-canonical"
 import { shouldRenderToolError } from "./tool-render-routing"
-import { genericPresentation, presentDiffTool, presentRowTool } from "./tool-presenters"
+import {
+  genericPresentation,
+  presentDiffTool,
+  presentQuestion,
+  presentRowTool,
+  presentSkill,
+  presentTask,
+} from "./tool-presenters"
 import { ApplyPatchBody, EditBody, WriteBody } from "./diff-tool-card"
 import { canonicalMetadataFiles } from "./diff-tool-model"
 import { displayToolOf } from "./parts-rules"
@@ -1577,6 +1596,7 @@ import { displayToolOf } from "./parts-rules"
 PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   const data = useData()
   const i18n = useI18n()
+  const location = useLocation()
   const part = () => props.part as ToolPart
   if (part().tool === "todowrite") return null
 
@@ -1600,7 +1620,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   })
   const taskHref = createMemo(() => {
     if (!isTaskPart(part())) return
-    return sessionLink(taskChildID(), useLocation().pathname, data.sessionHref)
+    return sessionLink(taskChildID(), location.pathname, data.sessionHref)
   })
   const taskSubtitle = createMemo(() => {
     if (!isTaskPart(part())) return undefined
@@ -1637,6 +1657,10 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     mode: "chat",
     t: (key, params) => i18n.t(key, params),
     sessionHref: data.sessionHref,
+    agent: (name) => presentationAgent(name, data.store.agent),
+    subagentSession: (taskInput) =>
+      (partMetadata().sessionID as string | undefined) ??
+      taskSession(taskInput, location.pathname, data.store.session, data.store.agent),
   })
   const presentation = createMemo(() => {
     const current = entry()
@@ -2147,114 +2171,8 @@ ToolRegistry.register({
 
 ToolRegistry.register({
   name: "task",
-  render(props) {
-    const data = useData()
-    const i18n = useI18n()
-    const location = useLocation()
-    const childSessionId = createMemo(() => {
-      return props.metadata.sessionID as string | undefined
-        ?? taskSession(props.input, location.pathname, data.store.session, data.store.agent)
-    })
-    const agent = createMemo(() => taskAgent(typeof props.input.agent === "string" ? props.input.agent : undefined, data.store.agent))
-    const title = createMemo(() => agent().name ?? i18n.t("ui.tool.agent.default"))
-    const tone = createMemo(() => agent().color)
-    const v2Tone = createMemo(() => agent().v2Color)
-    const subtitle = createMemo(() => {
-      const value =
-        typeof props.input.description === "string" && props.input.description
-          ? props.input.description
-          : childSessionId()
-      if (!value) return value
-      if (props.metadata.background === true) return `${value} (background)`
-      return value
-    })
-    const running = createMemo(() => props.status === "pending" || props.status === "running")
-
-    const href = createMemo(() => sessionLink(childSessionId(), location.pathname, data.sessionHref))
-    const clickable = createMemo(() => !!(childSessionId() && (data.navigateToSession || href())))
-
-    const open = () => {
-      const id = childSessionId()
-      if (!id) return
-      if (data.navigateToSession) {
-        data.navigateToSession(id)
-        return
-      }
-      const value = href()
-      if (value) window.location.assign(value)
-    }
-
-    const navigate = (event: MouseEvent) => {
-      if (!data.navigateToSession) return
-      if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
-      event.preventDefault()
-      open()
-    }
-    const navigateKey = (event: KeyboardEvent) => {
-      if (!clickable() || href()) return
-      if (event.key !== "Enter" && event.key !== " ") return
-      event.preventDefault()
-      open()
-    }
-
-    const trigger = () => (
-      <div
-        data-component="task-tool-card"
-        style={{
-          "--task-agent-color": v2Tone(),
-          "--task-agent-legacy-color": tone(),
-        }}
-      >
-        <div data-component="task-tool-surface">
-          <div data-slot="basic-tool-tool-info-structured">
-            <div data-slot="basic-tool-tool-info-main">
-              <Show
-                when={running()}
-                fallback={
-                  <Show when={newLayout()}>
-                    <span data-component="task-tool-icon">
-                      <Icon name="subagent" size="small" />
-                    </span>
-                  </Show>
-                }
-              >
-                <span data-component="task-tool-spinner" style={{ color: tone() ?? "var(--icon-interactive-base)" }}>
-                  <Show when={newLayout()} fallback={<Spinner />}>
-                    <SessionProgressIndicatorV2
-                      style={{ color: v2Tone() ?? "light-dark(var(--v2-text-text-base), #ffffff)" }}
-                    />
-                  </Show>
-                </span>
-              </Show>
-              <span data-component="task-tool-title">{title()}</span>
-              <Show when={subtitle()}>
-                <span data-slot="basic-tool-tool-subtitle">{subtitle()}</span>
-              </Show>
-            </div>
-          </div>
-        </div>
-        <Show when={clickable()}>
-          <div data-component="task-tool-action">
-            <Icon name="square-arrow-top-right" size="small" />
-          </div>
-        </Show>
-      </div>
-    )
-
-    return (
-      <BasicTool
-        icon="task"
-        status={props.status}
-        trigger={trigger()}
-        hideDetails
-        triggerAsLink
-        triggerHref={href()}
-        clickable={clickable()}
-        onTriggerClick={navigate}
-        onTriggerKeyDown={navigateKey}
-      />
-    )
-  },
+  present: presentTask,
+  renderBody: TaskBody,
 })
 
 ToolRegistry.register({
@@ -2398,67 +2316,11 @@ ToolRegistry.register({
 
 ToolRegistry.register({
   name: "question",
-  render(props) {
-    const i18n = useI18n()
-    const questions = createMemo(() => (props.input.questions ?? []) as QuestionInfo[])
-    const answers = createMemo(() => (props.metadata.answers ?? []) as QuestionAnswer[])
-    const completed = createMemo(() => answers().length > 0)
-
-    const subtitle = createMemo(() => {
-      const count = questions().length
-      if (count === 0) return ""
-      if (completed()) return i18n.t("ui.question.subtitle.answered", { count })
-      return `${count} ${i18n.t(count > 1 ? "ui.common.question.other" : "ui.common.question.one")}`
-    })
-
-    return (
-      <BasicTool
-        {...props}
-        icon="bubble-5"
-        trigger={{
-          title: i18n.t("ui.tool.questions"),
-          subtitle: subtitle(),
-        }}
-      >
-        <Show when={completed()}>
-          <div data-component="question-answers">
-            <For each={questions()}>
-              {(q, i) => {
-                const answer = () => answers()[i()] ?? []
-                return (
-                  <div data-slot="question-answer-item">
-                    <div data-slot="question-text">{q.question}</div>
-                    <div data-slot="answer-text">{answer().join(", ") || i18n.t("ui.question.answer.none")}</div>
-                  </div>
-                )
-              }}
-            </For>
-          </div>
-        </Show>
-      </BasicTool>
-    )
-  },
+  present: presentQuestion,
+  renderBody: QuestionBody,
 })
 
 ToolRegistry.register({
   name: "skill",
-  render(props) {
-    const i18n = useI18n()
-    const title = createMemo(() => props.input.name || i18n.t("ui.tool.skill"))
-    const running = createMemo(() => props.status === "pending" || props.status === "running")
-
-    const titleContent = () => <TextShimmer text={title()} active={running()} />
-
-    const trigger = () => (
-      <div data-slot="basic-tool-tool-info-structured">
-        <div data-slot="basic-tool-tool-info-main">
-          <span data-slot="basic-tool-tool-title" class="capitalize agent-title">
-            {titleContent()}
-          </span>
-        </div>
-      </div>
-    )
-
-    return <BasicTool icon="brain" status={props.status} trigger={trigger()} hideDetails />
-  },
+  present: presentSkill,
 })
