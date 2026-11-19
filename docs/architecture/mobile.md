@@ -557,6 +557,19 @@ summary, proposedGoal?, state, userAction, deadline, llmSuggestions?, updatedAt?
 - 现状限制：relay M1 的 room claim 仍在内存；手机端尚未消费 `relayUrl/fp`（M3）；
   腾讯云 443 部署与 SQLite 持久化在 M4。
 
+### 7.18 Mobile M3：双端点与证书 pinning（2026-11-19）
+
+- 配对链接新增可选 `relayUrl` + `fp`（64 hex）；缺任一或非法即 malformed，旧链接不受影响。
+- `ConnectionConfig` 持久化 `baseUrl`（LAN）/`relayUrl`/`fingerprint`；`SecureConfigStore` 用
+  SharedPreferences 存 URL/relay/fp，token 仍在 secure storage。
+- App 启动（`_applyConfig`）做 **LAN 优先**：LAN `/health` 1.5s 内 200 则直连；否则切到
+  `relayUrl`。当前只在每次配置应用时解析，不后台自动切回。
+- relay 路径的 HTTP 用 `HttpClient.badCertificateCallback` 校验证书 DER SHA-256 == `fp`；
+  WS 升级通过 `IOWebSocketChannel.connect(customClient:)` 用同一个 pinning 策略。
+- 配对时若 LAN redeem 出现传输失败且链接带 relay，会改用 relay + pinning 重试一次；
+  gateway 已响应（PairingException）则不重试。
+- 媒体/语音仍按 LAN 设计：relay 自签证书对 Android 原生播放器不友好，远程路径不保证 TTS/媒体。
+
 ---
 
 ## 8. 已知待办（roadmap）
