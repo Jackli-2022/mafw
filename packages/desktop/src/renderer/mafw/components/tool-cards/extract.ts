@@ -5,7 +5,6 @@ export interface ToolCardSpec {
   icon: string
   title: string
   subtitle?: (input: any) => string | undefined
-  defaultOpen?: boolean
   extract: (input: any, output: string | undefined) => Section[]
   badge?: (input: any, output: string | undefined) => ToolBadge | undefined
 }

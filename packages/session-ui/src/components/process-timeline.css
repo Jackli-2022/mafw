@@ -106,9 +106,9 @@
    normalises the chrome (11px title, 10.5px target, no family icon, one
    chevron); each card keeps its own body: diff, terminal, question, family
    sections, subagent navigation. */
-/* Row, diff, and rich tools now use ToolCard's own compact tokens
-   (tool-card.css). These scoped rules remain for legacy MAFW family cards
-   until Wave 4. */
+/* Row, diff, rich, and family tools use ToolCard's own compact tokens
+   (tool-card.css). These scoped rules remain for bespoke MAFW cards and
+   legacy plugin fallbacks. */
 .mafw-process-step-card {
   position: relative;
   margin: 2px 0 4px;

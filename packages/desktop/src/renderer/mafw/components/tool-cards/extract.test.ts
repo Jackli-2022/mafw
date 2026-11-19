@@ -1,7 +1,15 @@
+import * as fs from "node:fs"
 import { describe, expect, test } from "bun:test"
 import { TOOL_SPECS, addMemorySections, genericSections, parseOut, searchResults, trunc, s } from "./extract"
 
+const extractSource = fs.readFileSync(new URL("./extract.ts", import.meta.url), "utf-8")
+
 describe("helpers", () => {
+  test("ToolCardSpec no longer carries the unused defaultOpen", () => {
+    expect(extractSource).not.toContain("defaultOpen?: boolean")
+    expect(Object.values(TOOL_SPECS).some((spec) => "defaultOpen" in spec)).toBe(false)
+  })
+
   test("parseOut：合法 JSON 解析，非法/空 → undefined", () => {
     expect(parseOut('{"a":1}')).toEqual({ a: 1 })
     expect(parseOut("not json")).toBeUndefined()
