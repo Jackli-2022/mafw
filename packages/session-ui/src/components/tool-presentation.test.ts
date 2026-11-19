@@ -27,5 +27,6 @@ describe("tool presentation defaults", () => {
     expect(partOutputText({ output: "out" })).toBe("out")
     expect(partOutputText({ content: [{ type: "text", text: "a" }, { type: "text", text: "b" }] })).toBe("a\nb")
     expect(partOutputText({})).toBeUndefined()
+    expect(partOutputText({ output: "", content: [{ type: "text", text: "history" }] })).toBe("history")
   })
 })

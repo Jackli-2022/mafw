@@ -62,6 +62,13 @@ export function toolEntry(name: string): ToolRegistryEntry | undefined {
   return state[name]
 }
 
+/** ToolPartDisplay decision: presenter/custom slots win unless a plugin override replaces the card. */
+export function shouldUsePresentation(entry: ToolRegistryEntry | undefined): boolean {
+  if (!entry) return false
+  if (entry.override && entry.render) return false
+  return !!(entry.present || entry.renderCollapsed || entry.renderBody)
+}
+
 export const ToolRegistry = {
   register: registerTool,
   render: getTool,
@@ -70,4 +77,5 @@ export const ToolRegistry = {
   has: hasTool,
   names: toolNames,
   entry: toolEntry,
+  shouldPresent: shouldUsePresentation,
 }

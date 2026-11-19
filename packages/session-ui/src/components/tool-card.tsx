@@ -1,6 +1,8 @@
 import { createMemo, createSignal, For, Show, type JSX } from "solid-js"
+import { Dynamic } from "solid-js/web"
 import { Collapsible } from "@mafw/ui/collapsible"
 import { TextShimmer } from "@mafw/ui/text-shimmer"
+import stripAnsi from "strip-ansi"
 import { Markdown } from "./markdown"
 import type { ToolProps } from "./message-part"
 import type { ResolvedToolPresentation, Section } from "./tool-presentation"
@@ -18,6 +20,12 @@ export interface ToolCardProps {
   renderBody?: (props: ToolProps) => JSX.Element
   /** Optional rich-section renderer (desktop injects ToolSections). */
   renderSections?: (sections: Section[]) => JSX.Element
+  /** Context-group mode: collapsed row only, no chevron/body. */
+  group?: boolean
+}
+
+function safeHref(href: string | undefined): string | undefined {
+  return href && /^https?:\/\//i.test(href) ? href : undefined
 }
 
 export function ToolCard(input: ToolCardProps) {
@@ -29,7 +37,8 @@ export function ToolCard(input: ToolCardProps) {
     if (input.open === undefined) setInternalOpen(value)
     input.onOpenChange?.(value)
   }
-  const pending = () => input.props.status === "pending" || input.props.status === "running"
+  const status = () => input.presentation.collapsed.status
+  const pending = () => status() === "pending" || status() === "running"
   const inputJson = createMemo(() => {
     const value = input.props.input
     if (!value || Object.keys(value).length === 0) return ""
@@ -42,6 +51,7 @@ export function ToolCard(input: ToolCardProps) {
   const output = () => input.props.output ?? ""
   const meta = () => input.presentation.collapsed.meta ?? []
   const actions = () => input.presentation.expanded.actions ?? []
+  const linkAction = () => actions().find((action) => action.kind === "link" && safeHref(action.href))
   const state = () => (open() ? "expanded" : "collapsed")
 
   const defaultRow = () => (
@@ -53,7 +63,16 @@ export function ToolCard(input: ToolCardProps) {
         <TextShimmer text={input.presentation.collapsed.title} class="mafw-tool-card-title" active />
       </Show>
       <Show when={input.presentation.collapsed.object}>
-        <span class="mafw-tool-card-object">{input.presentation.collapsed.object}</span>
+        <Show
+          when={linkAction()?.href ? safeHref(linkAction()!.href) : undefined}
+          fallback={<span class="mafw-tool-card-object">{input.presentation.collapsed.object}</span>}
+        >
+          {(href) => (
+            <a class="mafw-tool-card-object" href={href()} target="_blank" rel="noopener noreferrer">
+              {input.presentation.collapsed.object}
+            </a>
+          )}
+        </Show>
       </Show>
       <For each={meta()}>
         {(item) => (
@@ -65,15 +84,21 @@ export function ToolCard(input: ToolCardProps) {
     </div>
   )
 
+  const header = () => (
+    <Show when={input.renderCollapsed} fallback={defaultRow()}>
+      {(render) => render()(input.props)}
+    </Show>
+  )
+
   const defaultBody = () => (
     <div class="mafw-tool-card-default">
       <Show when={inputJson()}>
         <div class="mafw-tool-card-label">input</div>
-        <pre>{inputJson()}</pre>
+        <pre tabIndex={0} role="region" aria-label="tool input">{inputJson()}</pre>
       </Show>
       <Show when={output()}>
         <div class="mafw-tool-card-label">output</div>
-        <pre>{output()}</pre>
+        <pre tabIndex={0} role="region" aria-label="tool output">{output()}</pre>
       </Show>
       <Show when={!inputJson() && !output()}>
         <span class="mafw-tool-card-empty">(无输入/输出)</span>
@@ -81,31 +106,37 @@ export function ToolCard(input: ToolCardProps) {
     </div>
   )
 
+  const terminalText = () => {
+    const command = typeof input.props.input?.command === "string" ? input.props.input.command : ""
+    const out = stripAnsi(output())
+    return command ? `$ ${command}${out ? `\n\n${out}` : ""}` : out
+  }
+
   const body = () => {
-    if (input.renderBody) return input.renderBody(input.props)
+    if (input.renderBody) return <Dynamic component={input.renderBody} {...input.props} />
     const sections = input.presentation.expanded.sections
     if (sections?.length && input.renderSections) return input.renderSections(sections)
     const kind = input.presentation.expanded.body ?? "default"
     if (kind === "markdown") return <Markdown text={output()} />
-    if (kind === "terminal" || kind === "json") {
-      return <pre class="mafw-tool-card-pre">{output()}</pre>
-    }
+    if (kind === "terminal") return <pre class="mafw-tool-card-pre" tabIndex={0} role="region" aria-label="tool output">{terminalText()}</pre>
+    if (kind === "json") return <pre class="mafw-tool-card-pre" tabIndex={0} role="region" aria-label="tool output">{stripAnsi(output())}</pre>
     return defaultBody()
   }
 
+  if (input.group) {
+    return (
+      <div class="mafw-tool-card mafw-tool-card-group" data-component="tool-card" data-state="collapsed" data-status={status()}>
+        <div class="mafw-tool-card-trigger" data-state="collapsed">{header()}</div>
+      </div>
+    )
+  }
+
   return (
-    <div
-      class="mafw-tool-card"
-      data-component="tool-card"
-      data-state={state()}
-      data-status={input.props.status ?? "completed"}
-    >
+    <div class="mafw-tool-card" data-component="tool-card" data-state={state()} data-status={status()}>
       <Collapsible open={open()} onOpenChange={setOpen} variant="ghost">
         <Collapsible.Trigger>
           <div class="mafw-tool-card-trigger" data-state={state()}>
-            <Show when={input.renderCollapsed} fallback={defaultRow()}>
-              {(render) => render()(input.props)}
-            </Show>
+            {header()}
             <Collapsible.Arrow />
           </div>
         </Collapsible.Trigger>
@@ -115,13 +146,14 @@ export function ToolCard(input: ToolCardProps) {
             <Show when={actions().length > 0}>
               <div class="mafw-tool-card-actions" data-component="tool-card-actions">
                 <For each={actions()}>
-                  {(action) =>
-                    action.kind === "link" && action.href ? (
-                      <a class="mafw-tool-card-link" href={action.href} target="_blank" rel="noopener noreferrer">
-                        {action.label ?? action.href}
+                  {(action) => {
+                    const href = safeHref(action.href)
+                    return action.kind === "link" && href ? (
+                      <a class="mafw-tool-card-link" href={href} target="_blank" rel="noopener noreferrer">
+                        {action.label ?? href}
                       </a>
                     ) : null
-                  }
+                  }}
                 </For>
               </div>
             </Show>

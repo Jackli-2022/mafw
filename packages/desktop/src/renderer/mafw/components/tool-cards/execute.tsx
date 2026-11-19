@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, Show } from "solid-js"
+import { createMemo, createSignal, Index, Show } from "solid-js"
 import { BasicTool } from "@mafw/session-ui/basic-tool"
 import type { ToolProps } from "@mafw/session-ui/message-part"
 import type { ToolPresentation, ToolPresentationContext } from "@mafw/session-ui/tool-presentation"
@@ -104,7 +104,7 @@ export function ExecuteBody(props: ToolProps) {
         }
       >
         <div class="mafw-execute-calls">
-          <For each={calls()}>{(call) => <ExecuteCallRow call={call} />}</For>
+          <Index each={calls()}>{(call) => <ExecuteCallRow call={call()} />}</Index>
         </div>
       </Show>
       <Show when={!pending() && failed() && sections().length === 0}>

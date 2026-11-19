@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { ToolRegistry } from "./tool-registry"
+import { ToolRegistry, shouldUsePresentation } from "./tool-registry"
 
 describe("ToolRegistry presentation surface", () => {
   test("has() sees a presenter-only entry", () => {
@@ -16,5 +16,20 @@ describe("ToolRegistry presentation surface", () => {
     restore()
     expect(ToolRegistry.entry("overridable")?.present).toBeDefined()
     expect(ToolRegistry.entry("overridable")?.override).toBeUndefined()
+  })
+})
+
+describe("shouldUsePresentation", () => {
+  test("present and custom slots are used", () => {
+    expect(shouldUsePresentation({ name: "a", present: () => ({}) })).toBe(true)
+    expect(shouldUsePresentation({ name: "b", renderCollapsed: () => null as any })).toBe(true)
+    expect(shouldUsePresentation({ name: "c", renderBody: () => null as any })).toBe(true)
+  })
+  test("legacy render alone is not a presentation", () => {
+    expect(shouldUsePresentation({ name: "d", render: () => null as any })).toBe(false)
+    expect(shouldUsePresentation(undefined)).toBe(false)
+  })
+  test("plugin override suppresses present", () => {
+    expect(shouldUsePresentation({ name: "e", present: () => ({}), render: () => null as any, override: true })).toBe(false)
   })
 })

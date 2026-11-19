@@ -86,8 +86,6 @@ export interface ToolExpandedPresentation {
   sections?: Section[]
   actions?: ToolAction[]
   defaultOpen?: boolean
-  animated?: boolean
-  defer?: boolean
 }
 
 /**

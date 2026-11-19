@@ -3,6 +3,7 @@
 // gateway enrich 的 additive 字段 part.canonicalTool / part.toolClass 在此消费。
 import { CLASS_FAMILY, displayToolOf, TOOL_NAME_ALIASES } from "./parts-rules"
 import { ToolRegistry } from "./tool-registry"
+import type { ToolRegistryEntry } from "./tool-registry"
 import { GenericTool } from "./basic-tool"
 import type { ToolComponent } from "./tool-registry"
 
@@ -31,6 +32,20 @@ export function resolveToolRender(part: any): ToolComponent {
     ?? (canonical && canonical !== part.tool ? ToolRegistry.render(canonical) : undefined)
     ?? (family ? ToolRegistry.render(CLASS_FAMILY[family]) : undefined)
     ?? GenericTool
+  )
+}
+
+/** Four-level presentation entry resolution; mirrors resolveToolRender's precedence. */
+export function resolveToolEntry(part: any): ToolRegistryEntry | undefined {
+  const name = typeof part?.tool === "string" ? part.tool : ""
+  const alias = TOOL_NAME_ALIASES[name]
+  const canonical = displayToolOf(part)
+  const family = toolClassOfPart(part)
+  return (
+    ToolRegistry.entry(name)
+    ?? (alias ? ToolRegistry.entry(alias) : undefined)
+    ?? (canonical && canonical !== part.tool ? ToolRegistry.entry(canonical) : undefined)
+    ?? (family ? ToolRegistry.entry(CLASS_FAMILY[family]) : undefined)
   )
 }
 

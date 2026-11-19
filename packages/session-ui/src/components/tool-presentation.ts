@@ -59,8 +59,6 @@ export interface ToolExpandedPresentation {
   sections?: Section[]
   actions?: ToolAction[]
   defaultOpen?: boolean
-  animated?: boolean
-  defer?: boolean
 }
 
 /**
@@ -111,7 +109,7 @@ export function resolvePresentation(
 
 /** History tool parts carry output in `state.content[]`, not `state.output`. */
 export function partOutputText(state: any): string | undefined {
-  if (typeof state?.output === "string") return state.output
+  if (typeof state?.output === "string" && state.output.length > 0) return state.output
   if (Array.isArray(state?.content)) {
     const text = state.content
       .filter((part: any) => part?.type === "text" && typeof part.text === "string")

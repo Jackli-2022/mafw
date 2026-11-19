@@ -22,7 +22,7 @@ import { shouldShowStreamingCaret } from "./streaming-caret"
 import { useFileComponent } from "@mafw/ui/context/file"
 import { useDialog } from "@mafw/ui/context/dialog"
 import { type UiI18n, useI18n } from "@mafw/ui/context/i18n"
-import { BasicTool } from "./basic-tool"
+import { BasicTool, GenericTool } from "./basic-tool"
 import { Accordion } from "@mafw/ui/accordion"
 import { StickyAccordionHeader } from "@mafw/ui/sticky-accordion-header"
 import { Collapsible } from "@mafw/ui/collapsible"
@@ -925,6 +925,15 @@ function ExaOutput(props: { output?: string }) {
   )
 }
 
+/** Expanded body for websearch: keep clickable URLs, fall back to raw output. */
+export function WebSearchBody(props: { output?: string }) {
+  return (
+    <Show when={urls(props.output).length > 0} fallback={<pre class="mafw-tool-card-pre">{props.output}</pre>}>
+      <ExaOutput output={props.output} />
+    </Show>
+  )
+}
+
 export function registerPartComponent(type: string, component: PartComponent) {
   PART_MAPPING[type] = component
 }
@@ -1120,18 +1129,21 @@ export function ContextToolGroup(props: {
           <Index each={props.parts}>
             {(partAccessor) => {
               const tool = createMemo(() => displayToolOf(partAccessor()))
-              const presentation = createMemo(() => {
+              const toolProps = () => {
                 const p = partAccessor()
+                return {
+                  input: readInput(p.state.input),
+                  tool: tool(),
+                  sessionID: p.sessionID,
+                  metadata: (p.state as any).metadata ?? {},
+                  output: partOutputText(p.state),
+                  status: p.state.status,
+                  error: errorText(p.state.error),
+                }
+              }
+              const presentation = createMemo(() => {
                 const ctx: ToolPresentationContext = {
-                  props: {
-                    input: readInput(p.state.input),
-                    tool: tool(),
-                    sessionID: p.sessionID,
-                    metadata: (p.state as any).metadata ?? {},
-                    output: partOutputText(p.state),
-                    status: p.state.status,
-                    error: errorText(p.state.error),
-                  },
+                  props: toolProps(),
                   directory: data.directory,
                   mode: "context",
                   t: (key, params) => i18n.t(key, params),
@@ -1139,32 +1151,9 @@ export function ContextToolGroup(props: {
                 }
                 return resolvePresentation(presentRowTool(tool(), ctx), ctx)
               })
-              const running = createMemo(
-                () => partAccessor().state.status === "pending" || partAccessor().state.status === "running",
-              )
               return (
                 <div data-slot="context-tool-group-item" data-tool={tool()}>
-                  <div data-component="tool-trigger">
-                    <div data-slot="basic-tool-tool-trigger-content">
-                      <div data-slot="basic-tool-tool-info">
-                        <div data-slot="basic-tool-tool-info-structured">
-                          <div data-slot="basic-tool-tool-info-main">
-                            <span data-slot="basic-tool-tool-title">
-                              <TextShimmer text={presentation().collapsed.title} active={running()} />
-                            </span>
-                            <Show when={!running() && presentation().collapsed.object}>
-                              <span data-slot="basic-tool-tool-subtitle">{presentation().collapsed.object}</span>
-                            </Show>
-                            <Show when={!running() && presentation().collapsed.meta?.length}>
-                              <For each={presentation().collapsed.meta}>
-                                {(item) => <span data-slot="basic-tool-tool-arg">{item.text}</span>}
-                              </For>
-                            </Show>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  <ToolCard props={toolProps()} presentation={presentation()} group />
                 </div>
               )
             }}
@@ -1540,11 +1529,11 @@ export type ToolComponent = Component<ToolProps>
 // 此处转发保持既有导入方（desktop tool-cards 等）零改动。
 export { registerTool, getTool, ToolRegistry } from "./tool-registry"
 export { resolveToolRender, CLASS_FAMILY, readPathInput, TOOL_NAME_ALIASES } from "./tool-canonical"
-import { ToolRegistry } from "./tool-registry"
-import { resolveToolRender, readPathInput, TOOL_NAME_ALIASES } from "./tool-canonical"
+import { ToolRegistry, shouldUsePresentation } from "./tool-registry"
+import { resolveToolRender, resolveToolEntry, readPathInput, TOOL_NAME_ALIASES } from "./tool-canonical"
 import { isTaskPart } from "./tool-canonical"
 import { shouldRenderToolError } from "./tool-render-routing"
-import { presentRowTool } from "./tool-presenters"
+import { genericPresentation, presentRowTool } from "./tool-presenters"
 import { displayToolOf } from "./parts-rules"
 
 function ToolFileAccordion(props: { path: string; actions?: JSX.Element; children: JSX.Element }) {
@@ -1616,8 +1605,8 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   const controlledOpen = () => (props.onToolOpenChange ? (props.toolOpen ?? props.defaultOpen) : undefined)
   const handleToolOpenChange = (open: boolean) => props.onToolOpenChange?.(open)
 
-  const toolName = () => TOOL_NAME_ALIASES[part().tool] ?? part().tool
-  const entry = createMemo(() => ToolRegistry.entry(toolName()))
+  const toolName = () => displayToolOf(part())
+  const entry = createMemo(() => resolveToolEntry(part()))
   const toolProps = (): ToolProps => ({
     input: input(),
     tool: toolName(),
@@ -1643,9 +1632,14 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   })
   const presentation = createMemo(() => {
     const current = entry()
-    if (!current?.present) return undefined
     const ctx = context()
-    return resolvePresentation(current.present(ctx), ctx)
+    if (shouldUsePresentation(current)) {
+      return resolvePresentation(current!.present?.(ctx), ctx)
+    }
+    if (!current && render() === GenericTool) {
+      return resolvePresentation(genericPresentation(toolProps(), ctx), ctx)
+    }
+    return undefined
   })
 
   return (
@@ -2117,6 +2111,7 @@ ToolRegistry.register({
 ToolRegistry.register({
   name: "websearch",
   present: (ctx) => presentRowTool("websearch", ctx),
+  renderBody: (props) => <WebSearchBody output={props.output} />,
   render(props) {
     const query = createMemo(() => {
       const value = props.input.query

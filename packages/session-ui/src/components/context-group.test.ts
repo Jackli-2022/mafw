@@ -11,6 +11,8 @@ describe("context tool group", () => {
     expect(source).not.toContain("contextToolDetail")
     expect(source).toContain("resolvePresentation")
     expect(source).toContain('mode: "context"')
+    expect(source).toContain("<ToolCard")
+    expect(source).toContain("group />")
   })
 
   test("read with file_path shows a filename, not undefined", () => {

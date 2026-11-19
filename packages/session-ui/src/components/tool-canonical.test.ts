@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { displayToolOf, isTopLevelToolEntry } from "./parts-rules"
-import { resolveToolRender, CLASS_FAMILY, readPathInput } from "./tool-canonical"
+import { resolveToolRender, resolveToolEntry, CLASS_FAMILY, readPathInput } from "./tool-canonical"
 import { registerTool } from "./tool-registry"
 import { GenericTool } from "./basic-tool"
 
@@ -54,5 +54,14 @@ describe("canonical 翻译层（session-ui 消费面）", () => {
     expect(isTopLevelToolEntry({ type: "tool", tool: "ls", canonicalTool: "list" })).toBe(false)
     expect(isTopLevelToolEntry({ type: "tool", tool: "bash" })).toBe(true)
     expect(isTopLevelToolEntry({ type: "tool", tool: "find", canonicalTool: "glob" })).toBe(false)
+  })
+
+  test("resolveToolEntry 走与 render 相同的原生名/canonical 链", () => {
+    registerTool({ name: "zz_entry_probe", present: () => ({}) })
+    expect(resolveToolEntry({ type: "tool", tool: "zz_entry_probe" } as any)?.present).toBeDefined()
+    expect(
+      resolveToolEntry({ type: "tool", tool: "alias_x", canonicalTool: "zz_entry_probe" } as any)?.name,
+    ).toBe("zz_entry_probe")
+    expect(resolveToolEntry({ type: "tool", tool: "zz_missing_probe" } as any)).toBeUndefined()
   })
 })

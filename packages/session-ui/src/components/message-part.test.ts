@@ -23,6 +23,12 @@ describe("ToolPartDisplay presentation wiring", () => {
   test("does not pass raw state.output only", () => {
     expect(componentSource).not.toContain("output={part().state.output}")
   })
+
+  test("uses the override-aware decision and generic fallback", () => {
+    expect(componentSource).toContain("shouldUsePresentation")
+    expect(componentSource).toContain("genericPresentation")
+    expect(componentSource).toContain("resolveToolEntry")
+  })
 })
 
 describe("readPartText", () => {

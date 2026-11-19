@@ -24,20 +24,40 @@ function pathLabel(path: string | undefined, ctx: ToolPresentationContext): stri
   return relativePath(path, ctx.directory) || getFilename(path) || undefined
 }
 
+/** First-party row tools migrated to presenters in Wave 1. */
+export const PRESENTED_ROW_TOOLS = ["read", "list", "glob", "grep", "webfetch", "websearch", "bash"] as const
+
 /** Pure row-tool presentations; Solid registrations point at this function. */
 export function presentRowTool(tool: string, ctx: ToolPresentationContext): ToolPresentation {
   const input = ctx.props.input ?? {}
   switch (tool) {
-    case "read":
+    case "read": {
+      const meta = []
+      if (typeof input.offset === "number") meta.push({ text: `offset=${input.offset}` })
+      if (typeof input.limit === "number") meta.push({ text: `limit=${input.limit}` })
       return {
-        collapsed: { title: ctx.t("ui.tool.read"), object: pathLabel(readPathInput(input), ctx) },
+        collapsed: {
+          title: ctx.t("ui.tool.read"),
+          object: pathLabel(readPathInput(input), ctx),
+          meta: meta.length ? meta : undefined,
+        },
         expanded: { body: "default" },
       }
-    case "list":
+    }
+    case "list": {
+      const path = readPathInput(input)
       return {
-        collapsed: { title: ctx.t("ui.tool.list"), object: pathLabel(readPathInput(input), ctx) },
+        collapsed: {
+          title: ctx.t("ui.tool.list"),
+          object: path
+            ? ctx.mode === "context"
+              ? getDirectory(path)
+              : relativePath(path, ctx.directory) || getDirectory(path)
+            : undefined,
+        },
         expanded: { body: "default" },
       }
+    }
     case "glob":
       return {
         collapsed: {
@@ -49,11 +69,16 @@ export function presentRowTool(tool: string, ctx: ToolPresentationContext): Tool
       }
     case "grep": {
       const include = stringInput(input, "include")
+      const path = readPathInput(input)
+      const meta = [
+        ...(include ? [{ text: `include=${include}` }] : []),
+        ...(path ? [{ text: getDirectory(path) }] : []),
+      ]
       return {
         collapsed: {
           title: ctx.t("ui.tool.grep"),
-          object: stringInput(input, "pattern") ?? pathLabel(readPathInput(input), ctx),
-          meta: include ? [{ text: `include=${include}` }] : undefined,
+          object: stringInput(input, "pattern") ?? pathLabel(path, ctx),
+          meta: meta.length ? meta : undefined,
         },
         expanded: { body: "default" },
       }

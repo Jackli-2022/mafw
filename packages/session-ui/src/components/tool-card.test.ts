@@ -24,4 +24,10 @@ describe("ToolCard shell", () => {
     expect(tsx).toContain("mafw-tool-card-link")
     expect(tsx).toContain("expanded.actions")
   })
+
+  test("uses the resolved status and supports group rows", () => {
+    expect(tsx).toContain("presentation.collapsed.status")
+    expect(tsx).toContain("mafw-tool-card-group")
+    expect(tsx).toContain("safeHref")
+  })
 })

@@ -1,6 +1,23 @@
 .mafw-tool-card {
   --mafw-tool-content-left: 6px;
 }
+.mafw-tool-card [data-component="collapsible"] > [data-slot="collapsible-trigger"] {
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  max-height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+.mafw-tool-card-group .mafw-tool-card-trigger {
+  margin: 0;
+  padding: 0;
+}
+.mafw-tool-card-group {
+  --mafw-tool-content-left: 0px;
+}
 .mafw-tool-card-trigger {
   display: flex;
   align-items: center;
@@ -78,6 +95,9 @@
 .mafw-tool-card-empty {
   font-size: 10.5px;
   color: var(--text-weaker);
+}
+.mafw-tool-card .mafw-tool-box {
+  padding-left: var(--mafw-tool-content-left);
 }
 .mafw-tool-card-actions {
   display: flex;
