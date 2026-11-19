@@ -892,69 +892,6 @@ function partText(part: { text?: string }): string {
   return part.text?.trim() ?? ""
 }
 
-function contextToolDetail(part: ToolPart): string | undefined {
-  const info = getToolInfo(part.tool, readInput(part.state.input), part.state.metadata)
-  if (info.subtitle) return info.subtitle
-  if (part.state.status === "error") return part.state.error
-  if ((part.state.status === "running" || part.state.status === "completed") && part.state.title)
-    return part.state.title
-  const description = readInput(part.state.input).description
-  if (typeof description === "string") return description
-  return undefined
-}
-
-function contextToolTrigger(part: ToolPart, i18n: ReturnType<typeof useI18n>) {
-  const input = readInput(part.state.input)
-  const path = typeof input.path === "string" ? input.path : "/"
-  const filePath = readPathInput(input)
-  const pattern = typeof input.pattern === "string" ? input.pattern : undefined
-  const include = typeof input.include === "string" ? input.include : undefined
-  const offset = typeof input.offset === "number" ? input.offset : undefined
-  const limit = typeof input.limit === "number" ? input.limit : undefined
-
-  switch (displayToolOf(part)) {
-    case "read": {
-      const args: string[] = []
-      if (offset !== undefined) args.push("offset=" + offset)
-      if (limit !== undefined) args.push("limit=" + limit)
-      return {
-        title: i18n.t("ui.tool.read"),
-        subtitle: filePath ? getFilename(filePath) : "",
-        args,
-      }
-    }
-    case "list":
-      return {
-        title: i18n.t("ui.tool.list"),
-        subtitle: getDirectory(path),
-      }
-    case "glob":
-      return {
-        title: i18n.t("ui.tool.glob"),
-        subtitle: getDirectory(path),
-        args: pattern ? ["pattern=" + pattern] : [],
-      }
-    case "grep": {
-      const args: string[] = []
-      if (pattern) args.push("pattern=" + pattern)
-      if (include) args.push("include=" + include)
-      return {
-        title: i18n.t("ui.tool.grep"),
-        subtitle: getDirectory(path),
-        args,
-      }
-    }
-    default: {
-      const info = getToolInfo(displayToolOf(part), input, "metadata" in part.state ? part.state.metadata : undefined)
-      return {
-        title: info.title,
-        subtitle: info.subtitle || contextToolDetail(part),
-        args: [],
-      }
-    }
-  }
-}
-
 function contextToolSummary(parts: ToolPart[]) {
   const read = parts.filter((part) => displayToolOf(part) === "read").length
   const search = parts.filter((part) => ["glob", "grep"].includes(displayToolOf(part))).length
@@ -1110,6 +1047,7 @@ export function ContextToolGroup(props: {
   onSizeChange?: () => void
 }) {
   const i18n = useI18n()
+  const data = useData()
   const [localOpen, setLocalOpen] = createSignal(false)
   const open = () => props.open ?? localOpen()
   const pending = createMemo(
@@ -1181,26 +1119,45 @@ export function ContextToolGroup(props: {
         <div data-component="context-tool-group-list">
           <Index each={props.parts}>
             {(partAccessor) => {
-              const trigger = createMemo(() => contextToolTrigger(partAccessor(), i18n))
+              const tool = createMemo(() => displayToolOf(partAccessor()))
+              const presentation = createMemo(() => {
+                const p = partAccessor()
+                const ctx: ToolPresentationContext = {
+                  props: {
+                    input: readInput(p.state.input),
+                    tool: tool(),
+                    sessionID: p.sessionID,
+                    metadata: (p.state as any).metadata ?? {},
+                    output: partOutputText(p.state),
+                    status: p.state.status,
+                    error: errorText(p.state.error),
+                  },
+                  directory: data.directory,
+                  mode: "context",
+                  t: (key, params) => i18n.t(key, params),
+                  sessionHref: data.sessionHref,
+                }
+                return resolvePresentation(presentRowTool(tool(), ctx), ctx)
+              })
               const running = createMemo(
                 () => partAccessor().state.status === "pending" || partAccessor().state.status === "running",
               )
               return (
-                <div data-slot="context-tool-group-item">
+                <div data-slot="context-tool-group-item" data-tool={tool()}>
                   <div data-component="tool-trigger">
                     <div data-slot="basic-tool-tool-trigger-content">
                       <div data-slot="basic-tool-tool-info">
                         <div data-slot="basic-tool-tool-info-structured">
                           <div data-slot="basic-tool-tool-info-main">
                             <span data-slot="basic-tool-tool-title">
-                              <TextShimmer text={trigger().title} active={running()} />
+                              <TextShimmer text={presentation().collapsed.title} active={running()} />
                             </span>
-                            <Show when={!running() && trigger().subtitle}>
-                              <span data-slot="basic-tool-tool-subtitle">{trigger().subtitle}</span>
+                            <Show when={!running() && presentation().collapsed.object}>
+                              <span data-slot="basic-tool-tool-subtitle">{presentation().collapsed.object}</span>
                             </Show>
-                            <Show when={!running() && trigger().args?.length}>
-                              <For each={trigger().args}>
-                                {(arg) => <span data-slot="basic-tool-tool-arg">{arg}</span>}
+                            <Show when={!running() && presentation().collapsed.meta?.length}>
+                              <For each={presentation().collapsed.meta}>
+                                {(item) => <span data-slot="basic-tool-tool-arg">{item.text}</span>}
                               </For>
                             </Show>
                           </div>
