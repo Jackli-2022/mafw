@@ -37,11 +37,15 @@
 
 ## 门禁
 
-- desktop 全量：**4226 / 4226 pass，0 fail（803 suites）**，较本批起点 4197 净 **+29** 用例。
+- desktop 全量：**4228 / 4228 pass，0 fail（803 suites）**，较本批起点 4197 净 **+31** 用例。
 - `tsgo --noEmit -p tsconfig.json`：rc=0。
-- `electron-vite build`：rc=0，44.46s。
+- `electron-vite build`：rc=0，44.82s。
 - Gateway / runtime 契约零改动；审批的人类专属语义（`permissions.reply` / `approvals.respond` /
   questions）参数与权限判断未改。
+- 终审（fresh reviewer）：1 Critical（关 tab 后焦点栈仍留着页面，back / 重启会复活无 tab 的页面）
+  已修——`withoutSubjects` + `pruneClosedTabsFromFocus`，并在关「其他 / 右侧」时批量剪枝；1 Important
+  （`tabIdForSubject` 对 scene 恒返回 id，`ensureSceneTabFor` 永远不可达）已修——只有 tab 真存在才返回 id，
+  恢复 / 被裁剪的 tab 会重建。commit `dc9c52ac9`。
 
 ## 真机冒烟
 
@@ -56,7 +60,8 @@ dev app + CDP `127.0.0.1:9226`（renderer 5173），宽窗 1572 CSS px / 窄窗 
   命令面板「打开用量与上下文」切到 Usage（`mafw:open-config` 事件生效）；页面 `scrollWidth - clientWidth = 0`。
 - **记忆**：命令面板 → dock「记忆」。
 - **会话切换 / 点 chat / FrameBar back / tab close**：切到另一个 session 后页面仍在；点 chat 输入框
-  页面仍在；back 回到上一个焦点（页面不崩）；关「设置」tab 后焦点回落到「MCP」，页面未连带关闭。
+  页面仍在；back 回到上一个焦点（页面不崩）；关「设置」tab（中键）后焦点回落到「MCP」，再 back 到
+  「审批」而不是复活「设置」，`mafw-scene-tabs` 同步移除 `page:config`。
 - **窄窗**：1006 px 下打开审批自动切到 Workbench 全宽视图，Chat / Workbench 分段可一键回 chat，
   chat 视图下页面仍挂载。
 
