@@ -983,9 +983,10 @@ gateway 每个响应都带 `X-MAFW-Schema-Epoch`（`releaseMetadata` 未加载�
 
 - **回执（2026-11-19 改版）**：最后一个 assistant 文本 part 内、copy/meta 动作行之前渲染一条
   11.5px 的安静收尾线（小脑 + 「想起 N 件旧事」），不再是 28px 药丸；`SessionTurn.renderTurnFooter`
-  → `TextPartDisplay.turnFooter`，`turnFooterPartID` 保证一轮只出一次。hover 340px 卡片只列
-  3 条主记忆，标题在首个自然标点处切分，类型标签与 pinned/相关 元数据移除，邻居折进
-  「还有 N 条顺带想起」。主计数在 pill / 卡片头 / 行数三处一致（只算 primary）。live 走
+  → `TextPartDisplay.turnFooter`，`turnFooterPartID` 保证一轮只出一次。点击收尾线打开 320px
+  浮层（`PopoverShell`，`below-start`，左边缘对齐答案，不压住答案本身；点外部 / Esc 关闭），
+  只列 3 条主记忆，标题在首个自然标点处切分，类型标签与 pinned/相关 元数据移除，邻居折进
+  「还有 N 条顺带想起」。主计数在 pill / 浮层头 / 行数三处一致（只算 primary）。live 走
   `memory.recalled`；打开/切换会话时 `window.api.mafw.sessions.memoryReceipts()` 回填
   （`memory-receipt-store.ts`，按 `updatedAt` 幂等）。用户消息的 `turnKey` 在历史摄取与
   “真实消息替换乐观消息”时都保留。
