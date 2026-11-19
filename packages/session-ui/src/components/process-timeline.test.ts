@@ -69,6 +69,12 @@ describe('ProcessTimeline', () => {
     expect(css()).not.toMatch(/font-size:\s*14px/)
   })
 
+  test('segment header reads one step larger than the tool rows', () => {
+    const styles = css()
+    expect(styles).toMatch(/\.mafw-process-seg-title\s*\{[^}]*font-size:\s*12px/)
+    expect(styles).toMatch(/\.mafw-process-seg-title\s*\{[^}]*font-weight:\s*400/)
+  })
+
   test('matches the edit card title size to the tool rows', () => {
     const styles = css()
     expect(styles).toContain('.mafw-process-step-card [data-slot="message-part-title-text"]')

@@ -9,6 +9,12 @@ export function formatDuration(ms: number | null | undefined): string {
   return `${minutes} 分 ${String(rest).padStart(2, '0')} 秒`
 }
 
+/** Only the last segment may use the whole-turn fallback; earlier segments
+ * would repeat the same duration and mislead. */
+export function segmentFallbackDuration(isLast: boolean, turnDurationMs: number | undefined): number | undefined {
+  return isLast ? turnDurationMs : undefined
+}
+
 /** Only the active segment opens by default while the turn is running. */
 export function defaultSegmentOpen(working: boolean, isLast: boolean): boolean {
   return Boolean(working) && Boolean(isLast)
@@ -24,9 +30,11 @@ export function processSummary(segment: Extract<TurnEntry, { type: 'segment' }>)
   let start: number | null = null
   let end: number | null = null
 
-  const noteTime = (time?: { start?: number; end?: number }) => {
-    if (typeof time?.start === 'number') start = start === null ? time.start : Math.min(start, time.start)
-    if (typeof time?.end === 'number') end = end === null ? time.end : Math.max(end, time.end)
+  const noteTime = (time?: { start?: number; end?: number; created?: number; completed?: number }) => {
+    const startAt = typeof time?.start === 'number' ? time.start : time?.created
+    const endAt = typeof time?.end === 'number' ? time.end : time?.completed
+    if (typeof startAt === 'number') start = start === null ? startAt : Math.min(start, startAt)
+    if (typeof endAt === 'number') end = end === null ? endAt : Math.max(end, endAt)
   }
 
   for (const step of segment.process) {

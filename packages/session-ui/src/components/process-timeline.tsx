@@ -3,7 +3,7 @@ import { Collapsible } from '@mafw/ui/collapsible'
 import { Icon } from '@mafw/ui/icon'
 import { TextShimmer } from '@mafw/ui/text-shimmer'
 import { Markdown } from './markdown'
-import { formatDuration, processSummary, defaultSegmentOpen } from './process-timeline-model'
+import { formatDuration, processSummary, defaultSegmentOpen, segmentFallbackDuration } from './process-timeline-model'
 import type { MafwPart } from '@mafw/sdk'
 import type { ProcessStep, TurnEntry } from './turn-transcript'
 import './process-timeline.css'
@@ -66,10 +66,7 @@ export function ProcessTimeline(props: ProcessTimelineProps) {
   const toggle = (key: string, open: boolean) => {
     setOverrides((prev) => ({ ...prev, [key]: open }))
   }
-  const fallbackDuration = () =>
-    props.entries.filter((entry) => entry.type === 'segment').length === 1
-      ? props.fallbackDurationMs
-      : undefined
+  const fallbackDuration = (key: string) => segmentFallbackDuration(key === lastKey(), props.fallbackDurationMs)
 
   return (
     <div class="mafw-process-timeline">
@@ -87,7 +84,7 @@ export function ProcessTimeline(props: ProcessTimelineProps) {
           const title = () => {
             if (active()) return summary().thinking > 0 ? '正在思考' : '正在执行'
             if (summary().thinking > 0) {
-              const duration = formatDuration(summary().durationMs ?? fallbackDuration())
+              const duration = formatDuration(summary().durationMs ?? fallbackDuration(entry.key))
               return duration ? `已思考 ${duration}` : '已思考'
             }
             return `已执行 ${summary().tools} 个步骤`

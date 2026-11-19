@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { formatDuration, processSummary, defaultSegmentOpen } from './process-timeline-model'
+import { formatDuration, processSummary, defaultSegmentOpen, segmentFallbackDuration } from './process-timeline-model'
 import type { TurnEntry } from './turn-transcript'
 
 describe('formatDuration', () => {
@@ -9,6 +9,14 @@ describe('formatDuration', () => {
     expect(formatDuration(999)).toBe('1 秒')
     expect(formatDuration(3000)).toBe('3 秒')
     expect(formatDuration(65_000)).toBe('1 分 05 秒')
+  })
+})
+
+describe('segmentFallbackDuration', () => {
+  test('only the last segment falls back to the turn duration', () => {
+    expect(segmentFallbackDuration(true, 90_000)).toBe(90_000)
+    expect(segmentFallbackDuration(false, 90_000)).toBeUndefined()
+    expect(segmentFallbackDuration(true, undefined)).toBeUndefined()
   })
 })
 
@@ -24,6 +32,22 @@ describe('processSummary', () => {
       output: [],
     }
     expect(processSummary(segment)).toEqual({ tools: 1, thinking: 1, durationMs: 5900 })
+  })
+
+  test('reads created/completed from history reasoning parts', () => {
+    const segment = {
+      type: 'segment',
+      key: 'seg',
+      process: [
+        {
+          type: 'thinking',
+          key: 'r',
+          parts: [{ id: 'r', type: 'reasoning' as const, text: 'x', time: { created: 1000, completed: 4000 } }],
+        },
+      ],
+      output: [],
+    } as any
+    expect(processSummary(segment).durationMs).toBe(3000)
   })
 })
 

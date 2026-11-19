@@ -43,9 +43,9 @@
   opacity: .85;
 }
 .mafw-process-seg-title {
-  color: var(--text-2);
-  font-size: 11px;
-  font-weight: 500;
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 400;
 }
 .mafw-process-steps {
   position: relative;
