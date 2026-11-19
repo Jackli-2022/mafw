@@ -37,15 +37,20 @@
 
 ## 门禁
 
-- desktop 全量：**4228 / 4228 pass，0 fail（803 suites）**，较本批起点 4197 净 **+31** 用例。
+- desktop 全量：**4229 / 4229 pass，0 fail（803 suites）**，较本批起点 4197 净 **+32** 用例。
 - `tsgo --noEmit -p tsconfig.json`：rc=0。
-- `electron-vite build`：rc=0，44.82s。
+- `electron-vite build`：rc=0，1m16s。
 - Gateway / runtime 契约零改动；审批的人类专属语义（`permissions.reply` / `approvals.respond` /
   questions）参数与权限判断未改。
 - 终审（fresh reviewer）：1 Critical（关 tab 后焦点栈仍留着页面，back / 重启会复活无 tab 的页面）
   已修——`withoutSubjects` + `pruneClosedTabsFromFocus`，并在关「其他 / 右侧」时批量剪枝；1 Important
   （`tabIdForSubject` 对 scene 恒返回 id，`ensureSceneTabFor` 永远不可达）已修——只有 tab 真存在才返回 id，
   恢复 / 被裁剪的 tab 会重建。commit `dc9c52ac9`。
+- 终审 deferred minors 已收口（commit `0bc6879b6`）：页面图标 meta 改用 `DocumentTabIcon`；stale page
+  activeId 改为响应式守卫（document store 晚到也能清）；page frame scope 显示「项目」；approvals 动作行
+  允许收缩换行；Triage/Automations 卡片主体 `min-width: 0`；删除 `connDown` 非 chat 死分支与
+  `WorkbenchContentMode` / `workbenchContent`；deep-link 注释、测试排版、`navigateWorkbench` 未知 tab
+  回 chat 的契约断言一并补齐。
 
 ## 真机冒烟
 

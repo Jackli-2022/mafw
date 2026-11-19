@@ -495,8 +495,8 @@ spec `docs/superpowers/specs/2026-11-19-workbench-pages-design.md`，plan
 - **离线 / 重启**：`connDown()` 不再替换有 page focus 的 dock（Config 离线可达）；
   `focus-persistence.isSubject` 接受 page / memory；恢复时 `isStalePageActiveTab` 清掉没有焦点支撑的
   page activeId。
-- **门禁**：desktop **4228/4228（803 suites，本批净 +31）**、`tsgo --noEmit -p tsconfig.json` rc=0、
-  `electron-vite build` rc=0（44.82s）。
+- **门禁**：desktop **4229/4229（803 suites，本批净 +32）**、`tsgo --noEmit -p tsconfig.json` rc=0、
+  `electron-vite build` rc=0（1m16s）。
 - **关闭一致性**：关 scene tab 时 `pruneClosedTabsFromFocus` 同步从焦点栈移除该 subject（含「关闭其他 /
   右侧」批量），避免 back / 重启复活已关闭页面；`tabIdForSubject` 只在 tab 实际存在时返回，恢复或被
   MAX_TABS 裁剪的 tab 由 `ensureSceneTabFor` 重建。
