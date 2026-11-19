@@ -25,6 +25,7 @@ describe('MemoryReceipt wiring', () => {
     const src = read('./components/MemoryReceipt.tsx')
     expect(src).toContain('aria-expanded={showNeighbors()}')
     expect(src).toContain('setShowNeighbors')
+    expect(src).toContain('event.stopPropagation()')
     const css = read('./mafw.css')
     expect(css).not.toContain('.mafw-memory-receipt-pill')
     expect(css).toMatch(/\.mafw-memory-receipt-trigger\[data-component="button-v2"\] \{[^}]*font-size: 11\.5px/)

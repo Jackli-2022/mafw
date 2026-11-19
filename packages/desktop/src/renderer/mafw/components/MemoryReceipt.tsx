@@ -128,7 +128,10 @@ export function MemoryReceipt(props: {
               variant="ghost"
               size="small"
               class="mafw-memory-receipt-open"
-              onClick={() => props.onOpenMemory()}
+              onClick={(event: MouseEvent) => {
+                event.stopPropagation()
+                props.onOpenMemory()
+              }}
             >
               翻记忆 →
             </ButtonV2>
