@@ -9103,6 +9103,29 @@ html[data-theme="light"] body {
 .mafw-automations-page.is-compact .mafw-card {
   flex-wrap: wrap;
 }
+.mafw-mcp-page.is-compact {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px 24px;
+}
+.mafw-mcp-compact-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.mafw-mcp-page.is-compact .mafw-mcp-summary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.mafw-mcp-page.is-compact .mafw-mcp-filters {
+  flex-wrap: wrap;
+}
+.mafw-mcp-page.is-compact .mafw-ext-actions {
+  flex-wrap: wrap;
+}
 /* ── end focus stage ───────────────────────────────────────── */
 
 /* ── subject picker ────────────────────────────────────────── */

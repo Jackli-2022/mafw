@@ -889,7 +889,10 @@ export function MafwShell() {
         id: "automation", label: "自动化", hint: "Automations", group: "导航",
         run: () => openPageFocus("automation"),
       },
-      nav("mcp", "MCP 服务器", "MCP"),
+      {
+        id: "mcp", label: "MCP 服务器", hint: "MCP", group: "导航",
+        run: () => openPageFocus("mcp"),
+      },
       {
         id: "new-session", label: "新建会话", hint: "New session", group: "会话",
         run: () => { setShowConfig(false); void createSession().then(sid => { if (sid) openSessionTab(sid) }) },
@@ -4602,7 +4605,7 @@ export function MafwShell() {
           onTeam={() => openProjectTeam()}
           leadActive={activeSessionIsLead()}
           onApprovals={() => openPageFocus("approvals")}
-          onMcp={() => { closeLeftDockIfOverlay(); setShowConfig(false); setActiveTab("mcp") }}
+          onMcp={() => openPageFocus("mcp")}
           onNotifications={() => { closeLeftDockIfOverlay(); setNotificationsOpen((open) => !open) }}
           onConfig={() => { closeLeftDockIfOverlay(); setConfigSection(undefined); setShowConfig(true) }}
           onNewSession={() => { closeLeftDockIfOverlay(); void createSession().then((sid: any) => { if (sid) openSessionTab(sid) }) }}
@@ -5039,6 +5042,8 @@ export function MafwShell() {
                         return <TriagePage compact onOpenGoals={openProjectWork} />
                       case "automation":
                         return <AutomationsPage compact />
+                      case "mcp":
+                        return <McpPage compact />
                       default:
                         return <DockEmpty icon={WORKBENCH_PAGE_META[id].icon} text={`${WORKBENCH_PAGE_META[id].label}页待接入`} />
                     }

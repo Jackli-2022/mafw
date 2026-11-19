@@ -33,7 +33,7 @@ type McpServer = {
   disabled?: boolean
 }
 
-export function McpPage() {
+export function McpPage(props: { compact?: boolean } = {}) {
   const [servers, setServers] = createSignal<McpServer[]>([])
   const [loading, setLoading] = createSignal(true)
   const [err, setErr] = createSignal("")
@@ -112,19 +112,30 @@ export function McpPage() {
   }
 
   return (
-    <div class="mafw-mcp-page">
-      <PageHeader
-        title="MCP"
-        subtitle="MCP 服务器连接与状态"
-        actions={
-          <>
-            <ButtonV2 variant="ghost" size="small" onClick={() => void load()}>刷新</ButtonV2>
-            <Show when={configWritable()}>
-              <ButtonV2 variant="outline" size="small" onClick={() => setDialogOpen(true)}>添加服务器</ButtonV2>
-            </Show>
-          </>
-        }
-      />
+    <div class="mafw-mcp-page" classList={{ "is-compact": !!props.compact }}>
+      <Show when={!props.compact}>
+        <PageHeader
+          title="MCP"
+          subtitle="MCP 服务器连接与状态"
+          actions={
+            <>
+              <ButtonV2 variant="ghost" size="small" onClick={() => void load()}>刷新</ButtonV2>
+              <Show when={configWritable()}>
+                <ButtonV2 variant="outline" size="small" onClick={() => setDialogOpen(true)}>添加服务器</ButtonV2>
+              </Show>
+            </>
+          }
+        />
+      </Show>
+
+      <Show when={props.compact}>
+        <div class="mafw-mcp-compact-actions">
+          <ButtonV2 variant="ghost" size="small" onClick={() => void load()}>刷新</ButtonV2>
+          <Show when={configWritable()}>
+            <ButtonV2 variant="outline" size="small" onClick={() => setDialogOpen(true)}>添加服务器</ButtonV2>
+          </Show>
+        </div>
+      </Show>
 
       <Show
         when={manageVisible()}
