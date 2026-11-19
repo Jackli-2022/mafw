@@ -90,6 +90,8 @@
 - 修复后门禁：Session UI **35 suites / 193 pass / 0 fail**；Desktop **797 suites / 4164 pass / 0 fail**；两侧 `tsgo` rc 0；`electron-vite build` 通过。
 - `2d761a572`：段头 `已思考 N 秒` 改为 **12px / 400**（比工具名大一档、不加粗）；`processSummary` 同时读取 reasoning 的 `time.created/completed`，历史段不再丢时长；只有最后一段在完全无时间时回退整轮时长，前面段不重复。
 - 段头门禁：Session UI **36 suites / 196 pass / 0 fail**；Desktop **797 suites / 4164 pass / 0 fail**；两侧 `tsgo` rc 0；`electron-vite build` 通过。
+- `be294bd81`：所有工具卡运行时默认 **collapsed**；移除 CodeMode / question / MAFW 自绘卡的默认展开，`ToolCard` 只认调用方显式 `defaultOpen`（详情模式仍可展开 shell/edit）。
+- 折叠门禁：Session UI **36 suites / 197 pass / 0 fail**；Desktop **797 suites / 4164 pass / 0 fail**；两侧 `tsgo` rc 0；`electron-vite build` 通过。
 - 提交：`638c97e8d`（契约）、`f931f2734`（registry）、`8747e565a`（ToolCard）、`495aa6664`（行工具）、`133f85bc7`（ToolPartDisplay）、`04532270a`（context 组）、`8d9d31689`（plugin override）、`e67a71f4a`（ChatView 11px）、`8f29e679e`（CodeMode 卡）。
 
 ## 已知问题 / 后续
