@@ -130,7 +130,16 @@ export class HostHub {
       return null;
     }
 
-    const claim = this.registry.authenticate(hello.roomId, hello.roomToken, hello.routeSecret);
+    let claim = this.registry.authenticate(hello.roomId, hello.roomToken, hello.routeSecret);
+    if (!claim) {
+      // First host connection creates the room claim; later connections must
+      // present the same token (claim() returns null on a mismatch).
+      claim = this.registry.claim({
+        roomId: hello.roomId,
+        roomToken: hello.roomToken,
+        routeSecret: hello.routeSecret,
+      });
+    }
     if (!claim) {
       ws.send(JSON.stringify({ type: 'error', code: 'unauthorized' }));
       ws.close(1008, 'unauthorized');
