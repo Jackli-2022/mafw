@@ -12,6 +12,7 @@ import { openMenuOnKey } from "../context-menu/menu-key"
 //  - permission cards (opencode tool approvals, live in chat flow) — the badge counts these
 //  - user-questions (manager askUser), backed by GET /api/approvals
 export function ApprovalsPage(props: {
+  compact?: boolean
   permissionCards?: () => any[]
   onPermissionReply?: (card: any, reply: "once" | "always" | "reject", message?: string, persist?: boolean | "tool" | "prefix") => void
 } = {}) {
@@ -80,8 +81,10 @@ export function ApprovalsPage(props: {
   }
 
   return (
-    <div>
-      <PageHeader title="Approvals" subtitle="待审批的工具调用" />
+    <div class="mafw-approvals-page" classList={{ "is-compact": !!props.compact }}>
+      <Show when={!props.compact}>
+        <PageHeader title="Approvals" subtitle="待审批的工具调用" />
+      </Show>
       {loading() ? (
         <SkeletonRows rows={3} h="52px" />
       ) : !hasAnything() ? (
@@ -102,7 +105,7 @@ export function ApprovalsPage(props: {
                     <div class="mafw-card-meta" style={{ "white-space": "pre-wrap", "word-break": "break-all" }}>{p.action.payload}</div>
                   </Show>
                 </div>
-                <div style={{ display: "flex", gap: "4px", "flex-shrink": "0px" }}>
+                <div class="mafw-approvals-actions">
                   <ButtonV2 variant="contrast" size="small" onClick={() => props.onPermissionReply?.(p, "once")}>✓ 允许一次</ButtonV2>
                   <ButtonV2 variant="outline" size="small" onClick={() => props.onPermissionReply?.(p, "always")}>始终允许</ButtonV2>
                   <ButtonV2 variant="ghost" size="small" onClick={() => props.onPermissionReply?.(p, "reject")}>✕ 拒绝</ButtonV2>
@@ -120,7 +123,7 @@ export function ApprovalsPage(props: {
                   <div class="mafw-card-title">{a.question || a.id}</div>
                   <div class="mafw-card-meta">Goal: {a.goalId} · {a.status} · {a.createdAt ? new Date(a.createdAt).toLocaleString() : ""}</div>
                 </div>
-                <div style={{ display: "flex", gap: "4px", "flex-shrink": "0px" }}>
+                <div class="mafw-approvals-actions">
                   <ButtonV2 variant="contrast" size="small" onClick={() => respond(a.id, "approve")}>批准</ButtonV2>
                   <ButtonV2 variant="outline" size="small" onClick={() => respond(a.id, "reject")}>拒绝</ButtonV2>
                 </div>

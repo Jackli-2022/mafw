@@ -4598,7 +4598,7 @@ export function MafwShell() {
           onLead={() => { void openLeadEntry() }}
           onTeam={() => openProjectTeam()}
           leadActive={activeSessionIsLead()}
-          onApprovals={() => { closeLeftDockIfOverlay(); setShowConfig(false); setActiveTab("approvals") }}
+          onApprovals={() => openPageFocus("approvals")}
           onMcp={() => { closeLeftDockIfOverlay(); setShowConfig(false); setActiveTab("mcp") }}
           onNotifications={() => { closeLeftDockIfOverlay(); setNotificationsOpen((open) => !open) }}
           onConfig={() => { closeLeftDockIfOverlay(); setConfigSection(undefined); setShowConfig(true) }}
@@ -5030,6 +5030,8 @@ export function MafwShell() {
                   renderMemory={() => <MemoryPage compact />}
                   renderPage={(id) => {
                     switch (id) {
+                      case "approvals":
+                        return <ApprovalsPage compact permissionCards={pendingPermissionCards} onPermissionReply={permReply} />
                       case "triage":
                         return <TriagePage compact onOpenGoals={openProjectWork} />
                       default:
