@@ -29,10 +29,11 @@ Phase 1 解决了“看得见”，但没有解决“模型分裂”：
 
 **目标**
 
-- 单一 `ToolPresentation` 契约：标题、对象（相对路径/命令/query）、meta、状态、sections、actions、默认展开。
-- 同一个 `ToolCard` 渲染普通聊天与时间线，只切 `density`（comfortable / compact）。
+- 单一 `ToolPresentation` 契约：每个工具显式声明 **collapsed** 与 **expanded** 两个状态；未声明的字段走**显式默认**，不出现“没定义就不渲染”。
+- 同一个 `ToolCard` 渲染整个 ChatView（过程时间线、`AssistantParts`、context 组），不再按“普通聊天 / 时间线”分两套。
+- 默认态是契约的一部分：`DEFAULT_COLLAPSED` / `DEFAULT_EXPANDED` 有类型、有单测；任何工具至少能折叠成一行、展开成通用输入/输出。
 - 保留逃生口：diff 卡、task 导航、question 回答、skill 详情、MAFW 自绘卡。
-- 每个 `ToolRegistry` 名称都有 conformance 测试；缺 title / 缺 status 直接失败。
+- 每个第一方 `ToolRegistry` 名称都有 conformance 测试；缺 title / 缺 status / 两个状态都缺失直接失败。
 - 逐步删除 `getToolInfo` / `contextToolTrigger` 的重复字段，而不是一次性重写。
 
 **非目标**
@@ -47,7 +48,6 @@ Phase 1 解决了“看得见”，但没有解决“模型分裂”：
 新增 `packages/session-ui/src/components/tool-presentation.ts`（纯逻辑，无 Solid 依赖，bun test 直接导入）：
 
 ```ts
-export type ToolKind = "row" | "diff" | "rich"
 export type ToolStatus = "pending" | "running" | "completed" | "error"
 
 export interface ToolMeta {
@@ -64,27 +64,71 @@ export interface ToolAction {
   run?: () => void
 }
 
-export interface ToolPresentation {
-  kind: ToolKind
-  /** 仅作为 fallback；v8 方向 A 默认不渲染前置图标。 */
-  icon?: string
+/** 折叠态：始终是一行。 */
+export interface ToolCollapsedPresentation {
   title: string
   /** 相对路径 / 命令 / query / URL；一行省略。 */
   object?: string
   /** 右侧 badge / 计数 / 状态。 */
   meta?: ToolMeta[]
   status: ToolStatus
-  /** rich 卡正文；row 卡通常为空。 */
+  /** 仅作为 fallback；v8 方向 A 默认不渲染前置图标。 */
+  icon?: string
+}
+
+/** 展开态：正文。 */
+export interface ToolExpandedPresentation {
+  /**
+   * default = 通用输入/输出（JSON input + text output）。
+   * 未声明时永远走 default，保证任何工具都展开得出东西。
+   */
+  body?: "default" | "markdown" | "terminal" | "json" | "diff" | "custom"
   sections?: Section[]
-  /** 富交互：打开子代理 / 回答 / 外链。 */
   actions?: ToolAction[]
-  /** diff / terminal / markdown / json / custom；决定 body 渲染器。 */
-  body?: "diff" | "terminal" | "markdown" | "json" | "custom"
   defaultOpen?: boolean
   animated?: boolean
   defer?: boolean
 }
+
+/**
+ * 工具呈现 = 两个状态。
+ * 两个字段都可选；缺省由 resolvePresentation() 合并显式默认。
+ */
+export interface ToolPresentation {
+  collapsed?: Partial<ToolCollapsedPresentation>
+  expanded?: Partial<ToolExpandedPresentation>
+}
 ```
+
+### 3.0 显式默认（契约的一部分）
+
+```ts
+export function statusOf(props: ToolProps): ToolStatus {
+  if (props.status === "pending" || props.status === "running" || props.status === "error") return props.status
+  return "completed"
+}
+
+export function defaultCollapsed(ctx: ToolPresentationContext): ToolCollapsedPresentation {
+  return { title: ctx.props.tool, status: statusOf(ctx.props) }
+}
+
+export const DEFAULT_EXPANDED: ToolExpandedPresentation = { body: "default" }
+
+export function resolvePresentation(
+  raw: ToolPresentation | undefined,
+  ctx: ToolPresentationContext,
+): { collapsed: ToolCollapsedPresentation; expanded: ToolExpandedPresentation } {
+  return {
+    collapsed: { ...defaultCollapsed(ctx), ...raw?.collapsed },
+    expanded: { ...DEFAULT_EXPANDED, ...raw?.expanded },
+  }
+}
+```
+
+- 默认 `collapsed.title` 用 canonical 工具名；`present` 必须覆盖成人类可读标题。
+- 默认 `expanded.body = "default"` 是**真实渲染器**：输入 JSON + 输出文本，可滚动，不是“空”。
+- `body: "default"` 与 `body: "custom"` 互斥；`custom` 必须有 `renderBody`，否则 conformance 失败。
+- `sections` 与 `body` 可以同时存在：`sections` 优先，`body` 作为无 sections 时的正文。
 
 ### 3.1 构建上下文
 
@@ -153,31 +197,34 @@ ToolRegistry.entry(name)                  // 只读快照，调试/测试用
 
 ## 4. 渲染
 
-新增 `ToolCard`（session-ui）：
+新增 `ToolCard`（session-ui）。整个 ChatView 只有一个卡组件、一套字号，状态只有折叠/展开：
 
 ```tsx
 <ToolCard
-  presentation={presentation()}
-  density={density}          // "comfortable" | "compact"
-  open={...} onOpenChange={...}
-  renderSections={...}       // 富卡 sections 的渲染器（desktop 注入 ToolSections）
-  renderBody={...}           // 逃生口：diff / custom
+  presentation={presentation()}   // resolvePresentation() 的结果：{ collapsed, expanded }
+  open={open()} onOpenChange={...}
+  renderSections={...}            // 富卡 sections 的渲染器（desktop 注入 ToolSections）
+  renderBody={...}                // 逃生口：diff / custom
 />
 ```
 
-- `density` 写到 `data-density`，尺寸只由 token 控制：
-  - comfortable：标题 14px（普通聊天现状）
-  - compact：标题 11px / 目标 10.5px（过程抽屉现状）
-- `kind: "row"`：`BasicTool` + `object` + meta + chevron；有 `sections` 时 body 用 markdown/terminal/json。
-- `kind: "diff"`：保留现有 `edit`/`write`/`apply_patch` 组件作为 `renderBody`，`ToolCard` 只负责标题/路径/状态与展开壳。
-- `kind: "rich"`：sections（kv/tags/text/code/list）+ actions；MAFW family 走这一档。
-- **富卡正文渲染器留在 desktop**：`renderSections` 由 desktop 注入现有 `ToolSections`，`mafw-tool-box` / `mafw-tool-*` CSS 不搬家；session-ui 只拥有壳、row 与 density。这样避免把 30 个卡片的富内容排版一次性搬进 session-ui。
+- **折叠态**：一行，始终显示 `collapsed.title` + `collapsed.object` + `collapsed.meta` + chevron；无前置图标。
+- **展开态**：折叠行不变，下面挂 `expanded` 正文。
+- **两个样式是显式的**：`ToolCard` 根节点写 `data-state="collapsed" | "expanded"`；CSS 只按这两个状态写，不再靠位置（时间线 / 聊天）覆盖。默认 `collapsed`，`expanded.defaultOpen === true` 才初始展开。
+- **正文选择顺序**：
+  1. `expanded.sections` → `renderSections`
+  2. `expanded.body` 对应的内置渲染器（`default` / `markdown` / `terminal` / `json`）
+  3. `expanded.body === "diff"` 或 `"custom"` → `renderBody` 逃生口
+  4. 全缺 → `DEFAULT_EXPANDED.body = "default"`（通用输入/输出）
+- **默认展开态必须真实可渲染**：`default` 不是“空”，而是输入 JSON + 输出文本；没有显式展开体的工具也能展开。
+- **富卡正文渲染器留在 desktop**：`renderSections` 由 desktop 注入现有 `ToolSections`，`mafw-tool-box` / `mafw-tool-*` CSS 不搬家；session-ui 只拥有壳与状态。
 - error：`ToolErrorCard` 仍是独立短路，`handlesError` 语义不变。
 
-### 4.1 密度决策（本稿的调用）
+### 4.1 状态与尺寸（本稿的调用）
 
-- **普通聊天保持 comfortable 14px**；时间线用 compact 11px。不把聊天整体压小，避免改变现有阅读节奏。
-- `kind` 由工具显式声明，不做“按信息量猜”的启发式；猜错比多写一行更贵。
+- 不再有“普通聊天 vs 时间线”两套：涉及 ChatView 的三条路径（过程时间线、`AssistantParts`、context 组）都用同一个 `ToolCard`，只有 `open` 一个状态开关。
+- 字号只保留**一套**（待定，见 §8）：整个 ChatView 的折叠行同字号、同路径字号、同 chevron。
+- `collapsed` / `expanded` 由工具显式声明；缺省走 `defaultCollapsed` / `DEFAULT_EXPANDED`，不做“按信息量猜”。
 - `object` 统一用相对路径（`DataProvider.directory`）；context 组用文件名（`mode: "context"`），命令/query 原样，URL 原样。
 - 图标默认不渲染；`icon` 只留给未来可选的家族标识，不在本阶段使用。
 
@@ -189,28 +236,28 @@ ToolRegistry.entry(name)                  // 只读快照，调试/测试用
 
 - 新建 `tool-presentation.ts` + `ToolCard` + `resolveToolPresentation` + conformance harness。
 - 迁移 `read/list/glob/grep/webfetch/websearch/bash` + `GenericTool`。
-- 时间线切到 `ToolCard density="compact"`；普通聊天切到 `ToolCard density="comfortable"`（行为不变）。
+- 过程时间线与 `AssistantParts` 同时切到 `ToolCard`；两处共用同一套字号与状态。
 - 删除 `getToolInfo` 在时间线的使用。
+
 
 ### Wave 1b · context 组
 
 - `ContextToolGroup`（read/list/glob/grep）改用 `resolveToolPresentation(ctx.mode = "context")` + `ToolCard`；删除 `contextToolTrigger` / `contextToolDetail`。
-- 这是关闭时间线开关时的默认聊天路径；不迁移的话 `getToolInfo` 永远删不掉，同一个工具仍会两套长相。
-
+- 这是 `AssistantParts` 路径里的工具组；不迁移的话 `getToolInfo` 永远删不掉，同一个工具仍会两套长相。
 
 ### Wave 2 · diff
 
-- `edit/write/apply_patch`：`present()` 只产出标题/路径/status/meta（+/-），body 继续用现有组件。
+- `edit/write/apply_patch`：`present()` 产出 `collapsed`（标题/路径/status/meta ±）与 `expanded.body = "diff"`；body 继续用现有组件。
 - 验证 `deferContent`、`virtualizeDiff`、`ToolFileAccordion` 不被破坏。
 
 ### Wave 3 · 富卡
 
-- `task/question/skill`：`present()` 产出 title/object/actions/sections；task 的 `open-subagent`、question 的 `answer`、skill 的详情保留。
+- `task/question/skill`：`present()` 产出 `collapsed` 与 `expanded.sections/actions`；task 的 `open-subagent`、question 的 `answer`、skill 的详情保留。
 - 删除 task 的自绘 trigger 与 `task-tool-icon` 分支（如果 `ToolCard` 已覆盖）。
 
 ### Wave 4 · MAFW family
 
-- desktop `ToolCardSpec` 实现 `present(ctx)`：`extract` → `sections`，`badge` → `meta`，`subtitle` → `object`。
+- desktop `ToolCardSpec` 实现 `present(ctx)`：`extract` → `expanded.sections`，`badge` → `collapsed.meta`，`subtitle` → `collapsed.object`。
 - `renderSections` 继续由 desktop 注入现有 `ToolSections`；session-ui 不接管 `mafw-tool-*` CSS。
 - 8 个自绘卡（search/add/deltas/rule/python/execute/goal-created）保留 `render` 完整卡；它们没有 `present` 时走 legacy 路径。
 - 30 个 spec 全部接 `present` 后，删除 `familyCard` 的重复 trigger 构建。
@@ -223,11 +270,14 @@ ToolRegistry.entry(name)                  // 只读快照，调试/测试用
 
 ## 6. 测试
 
-- **纯函数**：`buildToolPresentation` 对每个工具 fixture 产出合法 title/status/kind；空 output / 错误 output 不崩。
-- **注册面 conformance**：`ToolRegistry.names()` 遍历第一方注册名（含 alias）；有 `present` 的必须返回合法 presentation；legacy-only 条目由 adapter 用 `getToolInfo` 合成 title/status，因此 `getToolInfo` 在 Wave 5 前不能删。插件动态注册的卡不进入 session-ui conformance，由 desktop 插件测试覆盖。
-- **DOM / 视觉**：不引入 jsdom/happy-dom。density 字号、路径、chevron、无图标继续用**CSS 源断言 + presentation 单测**；真实交互与视觉走每波真机检查。
+- **默认态**：`resolvePresentation(undefined, ctx)` 必须得到非空 `collapsed.title` / `status` 和 `expanded.body === "default"`；每个工具至少能折叠成一行、展开成通用输入/输出。
+- **纯函数**：每个工具 fixture 的 `collapsed` / `expanded` 合并结果合法；空 output / 错误 output 不崩；`body: "custom"` 缺 `renderBody` 直接失败。
+- **注册面 conformance**：`ToolRegistry.names()` 遍历第一方注册名（含 alias）；有 `present` 的必须返回合法 presentation；legacy-only 条目由 adapter 用 `getToolInfo` 合成 `collapsed`，因此 `getToolInfo` 在 Wave 5 前不能删。插件动态注册的卡不进入 session-ui conformance，由 desktop 插件测试覆盖。
+- **状态**：折叠态只有一行；展开态正文按 `sections → body → default` 选择；diff/rich/row 三种正文都能展开。
+- **DOM / 视觉**：不引入 jsdom/happy-dom。字号、路径、chevron、无图标继续用**CSS 源断言 + presentation 单测**；真实交互与视觉走每波真机检查。
 - **迁移回归**：edit/write diff、task 导航、question 答案、MAFW search 结果列表、GenericTool JSON 兜底、插件 `override` restore。
 - **门禁**：session-ui 全量（排除既有 `architecture.test.ts`）、desktop 全量 + `tsgo`、`electron-vite build`；每波都跑。
+
 
 ## 7. 风险
 
@@ -242,15 +292,20 @@ ToolRegistry.entry(name)                  // 只读快照，调试/测试用
 
 **本稿的调用（可按需推翻）**
 
-1. 普通聊天保持 comfortable；compact 只给时间线。
-2. `Section` / `ListItem` / `ToolBadge` 迁到 session-ui，desktop `extract.ts` re-export；`ToolCardSpec` 仍是 desktop 侧的适配层。
-3. 富卡 sections 与 `mafw-tool-*` CSS 留在 desktop，通过 `renderSections` 注入；不把 30 个卡片的排版搬进 session-ui。
-4. context 组（Wave 1b）在范围内；否则 `getToolInfo` 无法真正删除。
-5. 插件卡继续用 `render` + `override`，不要求迁移到 `present`。
-6. 不加 `localStorage` 回退开关；legacy `render` 就是逃生口。
+1. 整个 ChatView 用同一套 `ToolCard` 与同一套字号；不再有“普通聊天 / 时间线”两套。
+2. 每个工具显式声明 `collapsed` / `expanded`；缺省由 `defaultCollapsed` / `DEFAULT_EXPANDED` 合并，默认展开体是通用输入/输出。
+3. `Section` / `ListItem` / `ToolBadge` 迁到 session-ui，desktop `extract.ts` re-export；`ToolCardSpec` 仍是 desktop 侧的适配层。
+4. 富卡 sections 与 `mafw-tool-*` CSS 留在 desktop，通过 `renderSections` 注入；不把 30 个卡片的排版搬进 session-ui。
+5. context 组（Wave 1b）在范围内；否则 `getToolInfo` 无法真正删除。
+6. 插件卡继续用 `render` + `override`，不要求迁移到 `present`。
+7. 不加 `localStorage` 回退开关；legacy `render` 就是逃生口。
 
 **待决（需要你拍板）**
 
-1. 先只做 Wave 1 + 1b（契约 + 行工具 + context 组），还是一次性排完 Wave 1–5？前者能最快验证契约，后者改动面大。
-2. 普通聊天最终是否也要 compact？本稿默认不切；如果切，需要先做一轮视觉对比。
+1. 统一后的折叠行字号以哪一档为准？
+   - A. 11px / 550（现在过程抽屉的密度）
+   - B. 14px（现在 `AssistantParts` 工具卡的密度）
+   - C. 其他（给一个数值）
+2. 先只做 Wave 1 + 1b（契约 + 行工具 + context 组），还是一次性排完 Wave 1–5？前者能最快验证契约，后者改动面大。
+
 
