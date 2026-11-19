@@ -1,7 +1,7 @@
 # 2026-11-19 · MemoryPage 移到右工作台
 
 - **版本**：`v5.1.0`（桌面交互变更，不升版本号）
-- **提交**：`789a0929e`
+- **提交**：`789a0929e` + `8bb462830`
 - **范围**：desktop 右工作台 focus / scene tab / MemoryPage compact；gateway / runtime 契约零改动
 - **依据**：dev app live 验证（chat 760 + 右 dock 1052，紧凑页正常）
 
@@ -24,6 +24,7 @@
 - **回执链接**：`翻记忆 →` 仍然 `stopPropagation` + 关闭浮层，然后打开右 dock；
   chat 保持可见，浮层不会留在屏幕上。
 - 主区 `activeTab() === "memory"` 分支移除；回执成为唯一的记忆入口。
+- 命令面板的「记忆」也改走 `openMemoryFocus()`，不再 `nav("memory")` 切旧主区路由。
 
 ## 验证
 
@@ -32,6 +33,6 @@
   stage-dispatch memory 1 条。
 - desktop 全量：**4197 pass / 0 fail**（基线 4191）。
 - `tsgo --noEmit -p tsconfig.json`：通过。
-- `electron-vite build`：通过（1m 16s）。
+- `electron-vite build`：通过（1m 7s）。
 - live：点「翻记忆 →」后 chat 仍为 760×1066；右 dock 1052×1066，`.mafw-memory-page.is-compact`
   存在、`.mafw-mem-tabs` 存在，crumbs 为 `opencode-plugin-mafw / 项目 / 记忆`，浮层关闭。

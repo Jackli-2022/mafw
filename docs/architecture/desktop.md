@@ -988,7 +988,8 @@ gateway 每个响应都带 `X-MAFW-Schema-Epoch`（`releaseMetadata` 未加载�
   只列 3 条主记忆，标题在首个自然标点处切分，类型标签与 pinned/相关 元数据移除，邻居折进
   「还有 N 条顺带想起」。主计数在 pill / 浮层头 / 行数三处一致（只算 primary）。「翻记忆 →」
   打开右工作台的持久 `memory` scene tab（`scene:memory`，icon `brain`；`MemoryPage compact`
-  隐藏 PageHeader），chat 保持可见；主区不再有 `activeTab("memory")` 路由。live 走
+  隐藏 PageHeader），chat 保持可见；回执和命令面板都走 `openMemoryFocus`，主区不再有
+  `activeTab("memory")` 路由。live 走
   `memory.recalled`；打开/切换会话时 `window.api.mafw.sessions.memoryReceipts()` 回填
   （`memory-receipt-store.ts`，按 `updatedAt` 幂等）。用户消息的 `turnKey` 在历史摄取与
   “真实消息替换乐观消息”时都保留。
