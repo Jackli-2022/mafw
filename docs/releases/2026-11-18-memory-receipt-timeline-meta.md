@@ -108,6 +108,10 @@
 - Wave 4 门禁：Session UI **47 suites / 237 pass / 0 fail**；Desktop **803 suites / 4189 pass / 0 fail**；两侧 `tsgo` rc 0；`electron-vite build` 通过。本轮新增 **4 suites / 12 tests**（family-present、family-register、shared、family-registration + extract null case）；Desktop 总数同时包含并发 memory-receipt 工作新增的用例。
 - Wave 4 真机：当前会话没有顶层 MAFW family 工具调用（本会话的工具都在 Code Mode 子调用里），family 卡视觉未观测；`family-present` / `family-register` / `shared` 测试覆盖 presenter、空态、fallback 与 29 个 spec 的注册。
 - Wave 4 提交：`106a73577`（renderSections slot；同 commit 夹带并发 memory-receipt 的 `turnFooter` hunks，cherry-pick 时需注意）、`f36b0ccf6`（family presenter）、`a0d11a22a`（family registration + FamilyCard）、`91740d47b`（goal-created wiring test）、`785b0fad7`（fallback comment）、`4341f29df`（registration/empty-section hardening）。
+- Wave 5（清理 + conformance）：删除未使用的 `getToolInfo` / `ToolInfo` / `agentTitle` 重复映射；`ToolRegistry.has()` 现在统计 `present` / `render` / `renderCollapsed` / `renderBody` 全部自定义槽位；新增源码派生的第一方注册 conformance（除 `HIDDEN_TOOLS` 外每个 `ToolRegistry.register` 必须有 `present`，alias 目标必须已注册）；删除未使用的 `ToolCardSpec.defaultOpen` 并更新时间线注释。
+- Wave 5 门禁：Session UI **48 suites / 240 pass / 0 fail**；Desktop **803 suites / 4191 pass / 0 fail**；两侧 `tsgo` rc 0；`electron-vite build` 通过。本轮新增 Session UI **1 suite / 3 tests**、Desktop **1 test**；Desktop 总数同时包含并发工作新增用例。
+- Wave 5 真机：重载后工具卡正常折叠/展开，页面无 `.mafw-turn-render-error`；本波无视觉改动，作为回归守卫。
+- Wave 5 提交：`6cb235c79`（getToolInfo removal）、`f16ebba0f`（registry occupancy）、`ed67711fc`（registration conformance）、`cffda77af`（defaultOpen + comment cleanup）。
 
 ## 已知问题 / 后续
 
