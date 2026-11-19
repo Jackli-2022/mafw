@@ -228,7 +228,25 @@ ToolRegistry.entry(name)                  // 只读快照，调试/测试用
 - `object` 统一用相对路径（`DataProvider.directory`）；context 组用文件名（`mode: "context"`），命令/query 原样，URL 原样。
 - 图标默认不渲染；`icon` 只留给未来可选的家族标识，不在本阶段使用。
 
+### 4.2 折叠行长文本
+
+- 折叠行只有一行：`title` 不收缩，`object` 占剩余空间。
+- `object` 超长时**渐隐**，不用 `text-overflow: ellipsis` 硬切：
+  ```css
+  .tc-object {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+  }
+  ```
+- chevron（`chevron-down`）在 mask 之外，固定右侧；`meta` badge 也在 mask 之外，`object` 渐隐到 meta 前。
+- 展开态仍保留同一行；完整对象在展开体里，不给 `object` 加裸 `title`（AGENTS.md 禁止裸 `title`）。
+- 渐隐宽度默认 20px；太短看不出、太长会吃掉信息。窄窗下 object 可以继续缩，chevron 不缩。
+
 ## 5. 迁移波次
+
 
 严格 TDD：每波先写失败测试，再迁移，再删旧路径。
 
