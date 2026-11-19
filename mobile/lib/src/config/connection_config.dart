@@ -92,9 +92,41 @@ class ConnectionConfig {
   final String baseUrl; // e.g. http://192.168.1.5:3000 or https://... tailscale
   final String apiToken;
 
-  const ConnectionConfig({required this.baseUrl, required this.apiToken});
+  /// Stable relay Room URL, when the gateway advertises one (M2 pairing link).
+  final String relayUrl;
+
+  /// SHA-256 fingerprint (lowercase hex) of the gateway's Room certificate.
+  final String fingerprint;
+
+  const ConnectionConfig({
+    required this.baseUrl,
+    required this.apiToken,
+    this.relayUrl = '',
+    this.fingerprint = '',
+  });
 
   String get normalizedBaseUrl => baseUrl.replaceAll(RegExp(r'/+$'), '');
+
+  String get normalizedRelayUrl => relayUrl.replaceAll(RegExp(r'/+$'), '');
+
+  bool get hasRelay => normalizedRelayUrl.isNotEmpty && fingerprint.isNotEmpty;
+
+  /// True when the active base URL is the relay room (TLS pinning applies).
+  bool get usingRelay => hasRelay && normalizedBaseUrl == normalizedRelayUrl;
+
+  ConnectionConfig copyWith({
+    String? baseUrl,
+    String? apiToken,
+    String? relayUrl,
+    String? fingerprint,
+  }) {
+    return ConnectionConfig(
+      baseUrl: baseUrl ?? this.baseUrl,
+      apiToken: apiToken ?? this.apiToken,
+      relayUrl: relayUrl ?? this.relayUrl,
+      fingerprint: fingerprint ?? this.fingerprint,
+    );
+  }
 
   String get wsUrl => '${normalizedBaseUrl
       .replaceFirst('https://', 'wss://')

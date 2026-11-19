@@ -9,6 +9,8 @@ import '../config/connection_config.dart';
 /// Handles one-time migration from legacy SharedPreferences token.
 class SecureConfigStore {
   static const _kUrl = 'mafw_conn_base_url';
+  static const _kRelayUrl = 'mafw_conn_relay_url';
+  static const _kRelayFp = 'mafw_conn_relay_fp';
   static const _kTokenLegacy = 'mafw_conn_token';
   static const _kToken = 'mafw_secure_token';
 
@@ -30,12 +32,19 @@ class SecureConfigStore {
         await prefs.remove(_kTokenLegacy);
       }
     }
-    return ConnectionConfig(baseUrl: url, apiToken: token ?? '');
+    return ConnectionConfig(
+      baseUrl: url,
+      apiToken: token ?? '',
+      relayUrl: prefs.getString(_kRelayUrl) ?? '',
+      fingerprint: prefs.getString(_kRelayFp) ?? '',
+    );
   }
 
   Future<void> save(ConnectionConfig c) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kUrl, c.baseUrl);
+    await prefs.setString(_kRelayUrl, c.relayUrl);
+    await prefs.setString(_kRelayFp, c.fingerprint);
     await _sec.write(key: _kToken, value: c.apiToken);
   }
 

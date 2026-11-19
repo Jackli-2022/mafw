@@ -28,6 +28,23 @@ void main() {
       expect(prefs.getString('mafw_conn_token'), isNull);
     });
 
+    test('round-trips relay URL and fingerprint', () async {
+      final store = SecureConfigStore();
+      final cfg = ConnectionConfig(
+        baseUrl: 'http://192.168.1.5:3000',
+        apiToken: 'dev_x',
+        relayUrl: 'https://room.relay.example.com',
+        fingerprint: 'ab' * 32,
+      );
+      await store.save(cfg);
+
+      final loaded = await store.load();
+      expect(loaded.baseUrl, 'http://192.168.1.5:3000');
+      expect(loaded.relayUrl, 'https://room.relay.example.com');
+      expect(loaded.fingerprint, 'ab' * 32);
+      expect(loaded.hasRelay, isTrue);
+    });
+
     test('migrates legacy SharedPreferences token to secure storage', () async {
       SharedPreferences.setMockInitialValues({
         'mafw_conn_token': 'legacy-token',
