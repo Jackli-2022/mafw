@@ -7,6 +7,12 @@ describe("ToolRegistry presentation surface", () => {
     expect(ToolRegistry.has("present_only")).toBe(true)
     expect(ToolRegistry.names()).toContain("present_only")
   })
+  test("keeps a renderSections slot on the entry", () => {
+    const renderSections = () => null
+    ToolRegistry.register({ name: "family_probe", present: () => ({}), renderSections })
+    expect(ToolRegistry.entry("family_probe")?.renderSections).toBe(renderSections)
+  })
+
   test("override wins and restore brings back present", () => {
     const original = () => null
     ToolRegistry.register({ name: "overridable", present: () => ({}) })

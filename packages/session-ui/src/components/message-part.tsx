@@ -180,6 +180,10 @@ export interface MessagePartProps {
   turnDurationMs?: number
   useV2Actions?: boolean
   assistantActions?: AssistantActions
+  /** Render a turn-level footer after the final answer text, before the action row. */
+  turnFooter?: () => JSX.Element
+  /** Only the final text part of a turn owns the footer. */
+  turnFooterPartID?: string
 }
 
 function MessageActionButton(
@@ -716,6 +720,9 @@ export function AssistantParts(props: {
    * 桌面侧判定锚点资格见 desktop flow-card-placement.ts（规则镜像，需同步）。
    */
   renderAfterPart?: (part: PartType, message: MessageType) => JSX.Element
+  /** Turn-level footer rendered after the final answer text (desktop memory receipt). */
+  turnFooter?: () => JSX.Element
+  turnFooterPartID?: string
 }) {
   const data = useData()
   const emptyParts: PartType[] = []
@@ -799,6 +806,8 @@ export function AssistantParts(props: {
                         useV2Actions={props.useV2Actions}
                         defaultOpen={partDefaultOpen(item()!, props.shellToolDefaultOpen, props.editToolDefaultOpen)}
                         assistantActions={props.assistantActions}
+                        turnFooter={props.turnFooter}
+                        turnFooterPartID={props.turnFooterPartID}
                       />
                       {props.renderAfterPart?.(item()!, message()!)}
                     </Show>
@@ -1433,6 +1442,8 @@ export function Part(props: MessagePartProps) {
         turnDurationMs={props.turnDurationMs}
         useV2Actions={props.useV2Actions}
         assistantActions={props.assistantActions}
+        turnFooter={props.turnFooter}
+        turnFooterPartID={props.turnFooterPartID}
       />
     </Show>
   )
@@ -1546,6 +1557,7 @@ export function ToolPresentationFallback(props: ToolProps & { entry: ToolRegistr
       defaultOpen={props.defaultOpen}
       renderCollapsed={props.entry.renderCollapsed}
       renderBody={props.entry.renderBody}
+      renderSections={props.entry.renderSections}
       onOpenSession={data.navigateToSession ? (id) => data.navigateToSession?.(id) : undefined}
     />
   )
@@ -1698,6 +1710,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
                 onOpenChange={props.onToolOpenChange ? handleToolOpenChange : undefined}
                 renderCollapsed={entry()?.renderCollapsed}
                 renderBody={entry()?.renderBody}
+                renderSections={entry()?.renderSections}
                 onOpenSession={data.navigateToSession ? (id) => data.navigateToSession?.(id) : undefined}
               />
             )}
@@ -1846,6 +1859,15 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
             <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
           </Show>
         </div>
+        <Show
+          when={
+            props.turnFooter &&
+            props.message.role === "assistant" &&
+            props.part.id === props.turnFooterPartID
+          }
+        >
+          {props.turnFooter?.()}
+        </Show>
         <Show when={showCopy()}>
           <div data-slot="text-part-copy-wrapper" data-interrupted={interrupted() ? "" : undefined}>
             <Show when={props.assistantActions?.onSpeakToggle}>

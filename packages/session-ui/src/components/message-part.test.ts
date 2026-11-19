@@ -120,6 +120,11 @@ describe("rich card bodies", () => {
   test("question body falls back when there are no questions", () => {
     expect(componentSource).toContain("questions().length > 0 && answers().length > 0")
   })
+
+  test("forwards the desktop section renderer to ToolCard", () => {
+    expect(componentSource).toContain("renderSections={entry()?.renderSections}")
+    expect(componentSource).toContain("renderSections={props.entry.renderSections}")
+  })
 })
 
 describe("readPartText", () => {

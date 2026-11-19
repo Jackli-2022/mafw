@@ -2,7 +2,7 @@
 // tool-canonical.ts 与 message-part 渲染链共用；轻依赖，bun test 可直接导入）。
 import type { Component, JSX } from "solid-js"
 import type { ToolProps } from "./message-part"
-import type { ToolPresenter } from "./tool-presentation"
+import type { Section, ToolPresenter } from "./tool-presentation"
 
 export type ToolComponent = Component<ToolProps>
 
@@ -13,6 +13,8 @@ export interface ToolRegistryEntry {
   renderCollapsed?: (props: ToolProps) => JSX.Element
   /** Custom expanded body (body-only, rendered inside the card shell). */
   renderBody?: ToolComponent
+  /** Desktop-injected renderer for `expanded.sections`. */
+  renderSections?: (sections: Section[]) => JSX.Element
   render?: ToolComponent
   /** Plugin override: a full-card render wins over first-party present(). */
   override?: boolean
