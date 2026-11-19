@@ -9291,7 +9291,7 @@ html[data-theme="light"] body {
 }
 
 .mafw-turn-memory-receipt {
-  margin: 4px 0 2px 25px;
+  margin: 10px 0 0;
 }
 
 /* ── Composer context ghost row (date / city / language) ── */

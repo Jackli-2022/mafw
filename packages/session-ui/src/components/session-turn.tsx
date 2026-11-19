@@ -170,6 +170,8 @@ export function SessionTurn(
      * 只对渲染为顶层「part」条目的 part 触发（context 组工具/隐藏工具不触发）。
      */
     renderAfterPart?: (part: MafwPart, message: UiMessage) => JSX.Element
+    /** Turn-level footer rendered after the final answer text (desktop memory receipt). */
+    renderTurnFooter?: () => JSX.Element
     active?: boolean
     status?: MafwSessionStatus
     /** 会话处于 retry 时的展示元数据（次数/原因/下次时间）。 */
@@ -471,6 +473,8 @@ export function SessionTurn(
                         editToolDefaultOpen={props.editToolDefaultOpen}
                         renderAfterPart={props.renderAfterPart}
                         assistantActions={props.assistantActions}
+                        turnFooter={props.renderTurnFooter}
+                        turnFooterPartID={showAssistantCopyPartID()}
                       />
                     }
                   >
@@ -501,7 +505,14 @@ export function SessionTurn(
                       renderOutput={(part: any) => {
                         const message = messageOfPart(part)
                         return message
-                          ? <Part part={part} message={message} showAssistantCopyPartID={assistantCopyPartID()} assistantActions={props.assistantActions} />
+                          ? <Part
+                              part={part}
+                              message={message}
+                              showAssistantCopyPartID={assistantCopyPartID()}
+                              assistantActions={props.assistantActions}
+                              turnFooter={props.renderTurnFooter}
+                              turnFooterPartID={showAssistantCopyPartID()}
+                            />
                           : null
                       }}
                     />

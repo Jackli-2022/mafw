@@ -26,6 +26,16 @@ describe('MemoryReceipt wiring', () => {
     expect(css).not.toContain('.mafw-memory-receipt-pill')
     expect(css).toMatch(/\.mafw-memory-receipt-trigger\[data-component="button-v2"\] \{[^}]*font-size: 11\.5px/)
     expect(css).toMatch(/\.mafw-memory-receipt-card \{[^}]*width: 340px/)
-    expect(css).toMatch(/\.mafw-turn-memory-receipt \{\s*margin: 4px 0 2px 25px;/)
+    expect(css).toMatch(/\.mafw-turn-memory-receipt \{\s*margin: 10px 0 0;/)
+  })
+
+  test('renders inside the turn text part, before the action/meta row', () => {
+    const turn = read('../../../../session-ui/src/components/session-turn.tsx')
+    expect(turn).toContain('renderTurnFooter')
+    expect(turn).toContain('turnFooterPartID={showAssistantCopyPartID()}')
+    const part = read('../../../../session-ui/src/components/message-part.tsx')
+    expect(part).toContain('turnFooter')
+    expect(part).toContain('props.turnFooter?.()')
+    expect(part).toContain('props.part.id === props.turnFooterPartID')
   })
 })

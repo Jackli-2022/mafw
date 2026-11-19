@@ -2666,20 +2666,22 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                         const cards = inlineCardsForPart(message.id, part.callID)
                         return cards.length ? <For each={cards}>{(c) => renderFlowCard(c)}</For> : undefined
                       }}
+                      renderTurnFooter={() => (
+                        <Show when={receiptForTurn(msg)}>
+                          {(receipt) => (
+                            <div class="mafw-turn-memory-receipt">
+                              <MemoryReceipt
+                                view={buildMemoryReceiptView(receipt(), Date.now())}
+                                onOpenMemory={() => props.onOpenMemory?.()}
+                              />
+                            </div>
+                          )}
+                        </Show>
+                      )}
                       shellToolDefaultOpen={detailsMode()}
                       editToolDefaultOpen={detailsMode()}
                       useProcessTimeline={typeof localStorage === "undefined" || localStorage.getItem("mafw-process-timeline") !== "0"}
                     >
-                      <Show when={receiptForTurn(msg)}>
-                        {(receipt) => (
-                          <div class="mafw-turn-memory-receipt">
-                            <MemoryReceipt
-                              view={buildMemoryReceiptView(receipt(), Date.now())}
-                              onOpenMemory={() => props.onOpenMemory?.()}
-                            />
-                          </div>
-                        )}
-                      </Show>
                       {/* 过程元数据由内联折叠工具卡承载（发生处、默认折叠）；
                           审批汇总在 turn 末尾一行（v6 追加） */}
                       <Show when={otherCardsForTurn(msg.id).length > 0}>

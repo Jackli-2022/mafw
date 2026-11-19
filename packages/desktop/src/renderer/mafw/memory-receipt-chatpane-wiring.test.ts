@@ -10,6 +10,7 @@ describe('memory receipt ChatPane wiring', () => {
     expect(pane).toContain('memoryReceiptStore.hydrate')
     expect(pane).toContain('receiptForTurn')
     expect(pane).toContain('<MemoryReceipt')
+    expect(pane).toContain('renderTurnFooter')
   })
 
   test('does not crash when an older preload lacks the receipts call', () => {
