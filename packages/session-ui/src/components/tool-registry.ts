@@ -51,9 +51,10 @@ export function overrideTool(name: string, render: ToolComponent) {
   }
 }
 
-/** Slot occupancy: presenter-only entries count as available. */
+/** Slot occupancy: every custom presentation slot counts as available. */
 export function hasTool(name: string): boolean {
-  return !!(state[name]?.present || state[name]?.render)
+  const entry = state[name]
+  return !!(entry?.present || entry?.render || entry?.renderCollapsed || entry?.renderBody)
 }
 
 export function toolNames(): string[] {

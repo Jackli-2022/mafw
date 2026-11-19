@@ -7,6 +7,13 @@ describe("ToolRegistry presentation surface", () => {
     expect(ToolRegistry.has("present_only")).toBe(true)
     expect(ToolRegistry.names()).toContain("present_only")
   })
+  test("has() counts custom slots without a legacy render", () => {
+    ToolRegistry.register({ name: "body_only_probe", renderBody: () => null as any })
+    ToolRegistry.register({ name: "collapsed_only_probe", renderCollapsed: () => null as any })
+    expect(ToolRegistry.has("body_only_probe")).toBe(true)
+    expect(ToolRegistry.has("collapsed_only_probe")).toBe(true)
+  })
+
   test("keeps a renderSections slot on the entry", () => {
     const renderSections = () => null
     ToolRegistry.register({ name: "family_probe", present: () => ({}), renderSections })
