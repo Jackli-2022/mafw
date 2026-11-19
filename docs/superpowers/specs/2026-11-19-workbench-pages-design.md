@@ -60,11 +60,37 @@ export type WorkbenchPageId = (typeof WORKBENCH_PAGE_IDS)[number]
 
 ### 2. 导航语义
 
-- 左栏 / 命令面板 / `onNavigateTab` / `onNavigate` 都走同一个
-  `navigateWorkbench(id)`：`revealWorkbench()` + `openSceneTab` + `openSubject`。
+- 左栏 / 命令面板 / `onNavigateTab` / `onNavigate` / deep link 都走同一个
+  `navigateWorkbench(target)`：`revealWorkbench()` + `openSceneTab` + `selectFocus`。
 - 主区永远 chat；打开页面只打开/切换右 dock，不替换 chat。
-- 页面 tab 持久；切换会话、点击 chat 不清掉右 dock 页面。
-- 页面自己的返回由 FrameBar 的 back / tab close 处理；Config 不再需要 `onBack`。
+- 页面 tab 持久；切换会话、点击 chat、打开 subagent **不清掉**右 dock 页面。
+- **只有** FrameBar back / tab close / Config 自己的显式关闭会关闭页面。
+- `setShowConfig(false)` 类副作用全部删除，不再用「关 config」代替导航。
+- `openPageFocus` 用 `selectFocus`，同一页面重复打开只移到栈顶，不产生重复 focus。
+
+### 2.1 Config section 请求
+
+- `openConfigPage(section?)`：`setConfigSection(section)` + `openPageFocus("config")`，
+  然后 `requestAnimationFrame` 派发 `mafw:open-config`（detail = section）。
+- ConfigPage 已挂载时靠这个事件切 section；未挂载时靠 `initialSection`。
+- 删除 `MafwShell` 里 `if (!showConfig()) setConfigSection(undefined)` 的 reset effect。
+- `/skills` 等现有 `mafw:open-config` 发射器继续有效；MafwShell 的 handler 只
+  `setConfigSection` + `openPageFocus("config")`，不再 `setShowConfig(true)`。
+
+### 2.2 生命周期与边界
+
+- **项目范围**：page tab / focus 按项目（world）存，和 memory 一致；切项目切换页面栈。
+  Welcome 的 `unscoped` 页面在进入项目后不保留（明确接受）。
+- **重启**：`focus-persistence.isSubject` 接受 `page` 与 `memory`；如果旧快照的
+  `activeId` 是 page tab 但 focus 栈没有该 page，恢复时清掉该 activeId，避免
+  tab 高亮与 stage 不一致。
+- **Gateway 断开**：page focus（至少 Config）仍渲染右 dock；主区/dock 的
+  「Gateway 已断开」占位只在没有 page focus 时出现。
+- **Deep link**：`mafw://tab/approvals|triage|automation|memory|mcp|config` 需要
+  `navigateWorkbench` 路由；`goals/workspace` 仍打开项目工作。删除旧
+  `activeTab(link.id)` 路径，避免 chat-only guard 把深链吞掉。
+- **窄窗**：窄窗下打开页面会切到 Workbench 视图（不能同时显示 chat + dock）；
+  chat 仍在 Chat/Workbench 切换里，一键可回。宽窗保持 split。
 
 ### 3. Compact 页面契约
 
@@ -106,12 +132,22 @@ export type WorkbenchPageId = (typeof WORKBENCH_PAGE_IDS)[number]
    gateway / models / plugins / usage / keybindings。
 2. **Approvals 按钮溢出**：动作行改 class + `flex-wrap`；窄档可让按钮整行落到标题下方。
 3. **activeTab 旧路径残留**：加 guard + source-scan 测试，禁止再次出现非 chat main 分支。
-4. **右 dock 页面被会话切换清掉**：只允许 FrameBar back / tab close 关闭；删除 `setShowConfig(false)` 类副作用。
-5. **Human-only 审批被误改**：Approvals 只改布局，不碰 `onPermissionReply` / `approvals.respond` 的权限与参数。
+4. **MafwShell scene whitelist**：`sceneSubjectOf` / `sceneLabelFor` / `ensureSceneTabFor` /
+   `tabIdForSubject` / `syncStageToFocus` 必须同时认识 page；否则 tab 高亮、返回、重建 tab 都会错。
+5. **Config section 切换**：重复打开同一 section 也要能切；用 `mafw:open-config` 事件，
+   不能只靠 `initialSection`。
+6. **Offline / 深链 / 重启**：Config 在 gateway down 时仍要可达；deep link 不能变空操作；
+   page focus 重启后不能和 activeId 打架。
+7. **Human-only 审批被误改**：Approvals 只改布局，不碰 `onPermissionReply` / `approvals.respond`
+   的权限与参数。
 
 ## 验收
 
 - 主区任何导航都不会替换 chat；右 dock 可显示 5 个页面 + memory。
 - 每个页面在 640 档可用：无横向滚动、动作按钮不溢出。
-- Config 的所有 section 可从 compact picker 到达；Usage 从上下文圆环直达 `config/usage`。
+- Config 的所有 section 可从 compact picker 到达；usage ring 能直达 `config/usage`
+  （包括 Config 已挂载在别的 section 时）。
+- deep link 能打开对应页面；gateway down 时 Config 仍可达。
+- 切会话、点 chat、开 subagent 不关闭右 dock 页面；FrameBar back / tab close 才关闭。
+- 重启后 page tab 与 focus 一致；旧快照不会留下高亮错位的 page tab。
 - desktop 全量测试 + `tsgo --noEmit` + `electron-vite build` 通过；live smoke 每个页面。
