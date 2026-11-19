@@ -537,6 +537,26 @@ summary, proposedGoal?, state, userAction, deadline, llmSuggestions?, updatedAt?
   远程连接不支持，请在 LAN/Tailscale 使用；v2 device token 不受影响。
 - 真正的本机 loopback 请求仍是 `local`，行为不变；`tunneled` 是传输标记，不是新的信任级别。
 
+### 7.17 Relay M2：gateway 侧房间与证书（2026-11-19）
+
+- 配置（默认关闭）：
+  ```yaml
+  mobile:
+    relay:
+      enabled: false
+      url: wss://relay.example.com:8444
+      roomDomain: relay.example.com
+      localPort: 3002        # TLS terminator（loopback）
+  ```
+- 首次启用时在 `~/.mafw/mobile/relay/` 生成并持久化 `room.json` / `tls.key` / `tls.crt`；
+  Room URL 为 `https://<roomId>-<routeSecret>.<roomDomain>`，证书 SAN 与 host 完全一致。
+- `pairing` 链接在原有 `url` 之外追加 `relayUrl` 与 `fp`（证书 DER 的 SHA-256）；旧 App 忽略未知参数。
+- gateway 出站连 relay control WSS；relay `open` 的流接到 loopback **TLS terminator**（默认 3002），
+  由它终止网关证书、注入 M0 `x-mafw-tunnel`，再转发 `:3000`。
+- 房间身份/证书损坏会报错，不会静默换新房间；域名变化会要求重新配对。
+- 现状限制：relay M1 的 room claim 仍在内存；手机端尚未消费 `relayUrl/fp`（M3）；
+  腾讯云 443 部署与 SQLite 持久化在 M4。
+
 ---
 
 ## 8. 已知待办（roadmap）
