@@ -29,7 +29,10 @@ export function stripChatModeDirective(text: string): string {
 
 /** 用户消息展示文本：剥离事实注入、语音来源标记与模式指令。 */
 export function stripInjectedUserText(text: string): string {
+  // 运行时可能把 synthetic turn marker 用空行并入正文；剥掉 marker 后会留下
+  // `\n\n`，在 pre-wrap 的气泡里就是一条多余空行。展示文本统一去掉尾部换行。
   return stripClientChannel(stripLatestReminder(stripTurnMarker(stripChatModeDirective(stripVoiceOriginMarker(stripInjectedMemoryBlocks(text))))))
+    .replace(/\n+$/, "")
 }
 
 export interface IngestedHistoryPage {

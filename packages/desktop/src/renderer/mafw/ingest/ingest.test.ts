@@ -140,6 +140,24 @@ describe('message ingestion', () => {
     expect(parts.u1[0].text).not.toContain('[[turn')
   })
 
+  test('trims the blank line left by a stripped turn marker', () => {
+    const raw = '你是谁\n\n[[turn:turn_abc]]'
+    const { messages, parts } = ingestHistoryPage(
+      [{
+        id: 'u1',
+        sessionID: 's1',
+        role: 'user',
+        text: raw,
+        time: { created: 1 },
+        content: [{ id: 'p1', type: 'text', text: raw }],
+      }],
+      { sessionID: 's1' },
+    )
+    expect(messages[0].text).toBe('你是谁')
+    expect(messages[0].content[0].text).toBe('你是谁')
+    expect(parts.u1[0].text).toBe('你是谁')
+  })
+
   test('strips the latest reminder from user display text', () => {
     const raw = '<latest-reminder>2026-11-18 周三 14:32 · Asia/Shanghai · 上海 · 中文 · 渠道：桌面端</latest-reminder>\n\nhello'
     const { messages, parts } = ingestHistoryPage(
