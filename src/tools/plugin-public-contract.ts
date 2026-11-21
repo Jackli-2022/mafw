@@ -59,6 +59,8 @@ export const PLUGIN_UI_LIMITS_SNAPSHOT = {
   maxDepth: 12,
   maxTextBytes: 64 * 1024,
   maxImageDataUrlBytes: 2 * 1024 * 1024,
+  maxMenuItems: 20,
+  maxComposerActions: 3,
   maxToolPayloadBytes: 256 * 1024,
   maxActionPayloadBytes: 256 * 1024,
   defaultActionTimeoutMs: 15_000,

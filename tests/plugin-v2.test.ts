@@ -194,6 +194,7 @@ describe('setup(ctx) registration', () => {
       'mafw_pod_task_update', 'mafw_python', 'mafw_python_restart',
       'mafw_spawn_subagent', 'mafw_subagent_result', 'mafw_submit_result',
       'mafw_task_cancel', 'mafw_task_list', 'mafw_task_message', 'mafw_task_submit',
+      'mafw_topic_set',
     ]);
     for (const tool of regs.tools) {
       expect(tool.input.type).toBe('object');
