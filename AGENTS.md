@@ -109,6 +109,7 @@ npm run smoke:packaged-gateway -- --app-root dist/win-unpacked
 - **记忆**：谐波单位 + BM25/hybrid + pinned/sticky + 边界 recall + 巩固/衰减/反思/做梦等管线。→ `docs/architecture/memory.md`
 - **Gateway 运行时**：HTTP / MCP / SSE、serve sidecar、自更新、managed payload、插件中心。→ `docs/architecture/gateway.md`
 - **Runtime 契约**：能力自声明 + 事件映射 + HostAdapter + Experience / View DTO。→ `docs/architecture/runtime.md`
+- **Lead 语气**：Voice v1.1（conscientious colleague：先接住、answer-first、反谄媚、认知校准、四节点开口）。→ `docs/architecture/lead-voice.md`
 - **Goal / Pod**：NodeDriver 状态机、Plan Package / Goal Eval、worktree revision、事件与 presence。→ `docs/architecture/goal.md`、`docs/architecture/pod.md`；长效目标 → `docs/architecture/standing-goals.md`
 - **Desktop**：右主工作台、会话 / 编辑 / 预览 / 终端 / 语音 / 批注、Monaco、主题与动效。→ `docs/architecture/desktop.md`
 - **TUI**：pi-tui 布局、slash 命令、键位与鼠标交互。→ `docs/architecture/tui.md`
@@ -120,7 +121,7 @@ npm run smoke:packaged-gateway -- --app-root dist/win-unpacked
 
 | 主题 | 文档 |
 |---|---|
-| 架构 | `docs/architecture/{memory,gateway,runtime,pod,goal,standing-goals,desktop,tui,media,voice,python,mobile,plugin}.md` |
+| 架构 | `docs/architecture/{memory,gateway,runtime,lead-voice,pod,goal,standing-goals,desktop,tui,media,voice,python,mobile,plugin}.md` |
 | 记忆代码级全路径 | `docs/architecture/memory-system-full-path.md` |
 | 运维 | `docs/guides/operations.md` |
 | 插件 | `docs/guides/{plugin-authoring,plugin-creator,runtime-plugin-authoring}.md` |
