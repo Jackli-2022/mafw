@@ -52,7 +52,6 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             gateway/package-lock.json
-            adapters/claude/package-lock.json
 
       - name: Install root deps
         run: npm ci
@@ -61,10 +60,9 @@ jobs:
         working-directory: gateway
         run: npm ci
 
-      - name: Install claude adapter deps
-        working-directory: adapters/claude
-        run: npm ci
-
+      # adapters/claude is a workspace: the root `npm ci` installs its deps.
+      # A second `npm ci` inside the workspace runs the root prepare build
+      # without root devDeps on CI ("tsc is not recognized").
       - name: Build (plugin + gateway + tui)
         run: npm run build
 
