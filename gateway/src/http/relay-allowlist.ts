@@ -66,9 +66,23 @@ const ALLOWED_RULES: readonly AllowRule[] = [
 
 function safePath(pathname: string): string | null {
   const raw = pathname.split('?')[0] || '/';
+  // A literal backslash is never a valid URL path byte and is the classic
+  // Windows separator-overload traversal vector. Encoded forms (%5C) are
+  // legitimate — the mobile work tab sends the whole project dir as one
+  // segment (`C%3A%5Cwork%5Cproj`).
   if (raw.includes('\\')) return null;
-  if (/(^|\/)\.{1,2}(\/|$)/.test(raw)) return null;
-  if (/%2e|%2f|%5c/i.test(raw)) return null;
+
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch {
+    return null;
+  }
+  if (/[\u0000-\u001f\u007f]/.test(decoded)) return null;
+  // Judge dot segments after decoding, with either separator: `%2e%2e%2f`,
+  // `%2e%2e%5c` and mixed forms are all traversal.
+  if (/(^|[\\/])\.{1,2}([\\/]|$)/.test(decoded)) return null;
+
   let canonical: string;
   try {
     canonical = new URL(raw, 'http://localhost').pathname;

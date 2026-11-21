@@ -90,4 +90,33 @@ describe('relay allowlist (M0)', () => {
     expect(isRelayAllowed('GET', '/api/secret')).toBe(false);
     expect(isRelayAllowed('POST', '/')).toBe(false);
   });
+
+  // Regression: the mobile work tab passes the whole project dir as ONE
+  // percent-encoded segment (`Uri.encodeComponent(projectDir)`). On Windows
+  // that is `C%3A%5Cwork%5Cproj`, on POSIX `%2Fhome%2Fu%2Fproj`. Rejecting
+  // encoded separators outright turned every work-tab call into HTTP 403
+  // over the relay (found on a real device, 2026-11-21).
+  it('allows percent-encoded absolute project paths', () => {
+    for (const [method, path] of [
+      ['GET', '/api/projects/C%3A%5Cwork%5Cproj/work'],
+      ['GET', '/api/projects/%2Fhome%2Fu%2Fproj/work'],
+      ['GET', '/api/projects/C%3A%5Cwork%5Cproj/pod/lookup'],
+      ['POST', '/api/projects/C%3A%5Cwork%5Cproj/pod'],
+    ] as const) {
+      expect(`${method} ${path}:${isRelayAllowed(method, path)}`).toBe(`${method} ${path}:true`);
+    }
+  });
+
+  it('rejects traversal hidden inside an encoded project path', () => {
+    for (const [method, path] of [
+      ['GET', '/api/projects/..%5C..%5Capi%5Cpty/work'],
+      ['GET', '/api/projects/..%2F..%2Fapi%2Fpty/work'],
+      ['GET', '/api/projects/a%5C..%5C..%5Cb/work'],
+      ['GET', '/api/projects/%2E%2E%2Fapi%2Fpty/work'],
+      ['GET', '/api/projects/%2e%2e%5capi%5cpty/work'],
+      ['GET', '/api/projects/..%5C..%5C..%5Cetc/work'],
+    ] as const) {
+      expect(`${method} ${path}:${isRelayAllowed(method, path)}`).toBe(`${method} ${path}:false`);
+    }
+  });
 });
