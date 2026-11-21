@@ -5,7 +5,7 @@
  * probes，不处理 runtime 名称、原生事件或 SDK 类型。错误消息保持中性，
  * 避免业务路由把 runtime 身份泄漏给客户端。
  */
-import type { AgentRuntime } from './contract';
+import type { AgentRuntime, RuntimeCapabilities } from './contract';
 import { buildRuntimeContractManifest } from './contract-manifest';
 import type { ContractSurface, RuntimeContractManifest } from './contract-manifest-types';
 import { probePasses, type ContractSubject } from './coverage';
@@ -16,6 +16,18 @@ import { probePasses, type ContractSubject } from './coverage';
  */
 export function surfaceUnavailableMessage(surface: string): string {
   return `runtime does not support ${surface}`;
+}
+
+/**
+ * Capability gate for business routes that have already checked the presence
+ * face. Explicit `false` disables; undefined/true allow (legacy semantics).
+ * Keeps `.capabilities` reads in the runtime layer, never in routes.
+ */
+export function runtimeCapabilityEnabled(
+  rt: { capabilities?: Partial<RuntimeCapabilities> } | null | undefined,
+  key: keyof RuntimeCapabilities,
+): boolean {
+  return (rt?.capabilities as Record<string, unknown> | undefined)?.[key] !== false;
 }
 
 export class RuntimeSurfaceError extends Error {

@@ -94,5 +94,8 @@ const ADAPTER_BUILTINS = new Set(BUILTIN_MODULES.flatMap((name) => [name, `node:
 
 export function isAllowedAdapterSpecifier(specifier: string): boolean {
   if (specifier.startsWith('./')) return true;
+  // `node:sqlite` is a builtin on newer Node but may be absent from
+  // `builtinModules` on older runtimes; the scheme is the stable signal.
+  if (specifier.startsWith('node:')) return true;
   return ADAPTER_BUILTINS.has(specifier) || ADAPTER_ALLOWED_PACKAGES.has(specifier);
 }

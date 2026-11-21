@@ -5,6 +5,7 @@ import { RouteRegistry } from '../../../src/routes/registry';
 import { buildRouteCatalog } from '../../../src/routes/route-catalog';
 import { attachRecallRoutes } from '../../../src/routes/recall';
 import { setTopicState } from '../../../src/recall/topic-state';
+import { config } from '../../../src/config';
 
 function fakeReq(opts: { url: string; method: string; body?: string }): IncomingMessage {
   const listeners: Record<string, Array<(c?: unknown) => void>> = {};
@@ -76,6 +77,12 @@ function topicDb(currentTraceId = 't1t_real') {
 }
 
 describe('recall thin three registry wiring (D1 Task B3)', () => {
+  // Snapshot serving is opt-in by config; the test owns the decision instead
+  // of relying on the developer's ~/.mafw config (CI defaults to disabled).
+  beforeAll(() => {
+    config.search.snapshot.enabled = true;
+  });
+
   it('serving a T1-only snapshot records recall observations', async () => {
     const recorded: any[] = [];
     const now = new Date().toISOString();

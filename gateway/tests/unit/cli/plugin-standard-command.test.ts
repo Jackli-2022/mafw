@@ -225,7 +225,7 @@ describe('mafw plugin check', () => {
     expect(install).toContain('--permission events');
   });
 
-  it('normalizes Windows separators instead of omitting the command', async () => {
+  (process.platform === 'win32' ? it : it.skip)('normalizes Windows separators instead of omitting the command', async () => {
     const out: string[] = [];
     await runPluginStandardCommand(['check', 'C:\\work\\pkg'], {
       check: async () => ({ ok: true, kind: 'trusted', permissions: ['actions'] }),

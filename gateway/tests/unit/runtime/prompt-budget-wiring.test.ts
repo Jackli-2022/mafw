@@ -18,7 +18,7 @@ describe('prompt 预算接线（wiring 源码断言）', () => {
 
   it('promptAsync 调用前挂 per-prompt 预算（顺序：attach 先于 promptAsync）', () => {
     const attach = routeSrc.indexOf('deps.attachBudgetGuardForPrompt(sessionID, maxTurns, maxCostUsd);');
-    const send = routeSrc.indexOf('await deps.sdkSession().promptAsync(sessionID, message, parts, agent, model, outputSchema, {');
+    const send = routeSrc.indexOf('await deps.sdkSession().promptAsync(sessionID, message, clientParts, agent, model, outputSchema, {');
     expect(attach).toBeGreaterThan(0);
     expect(send).toBeGreaterThan(0);
     expect(attach).toBeLessThan(send); // step 事件在 prompt 执行中流出，guard 必须先挂

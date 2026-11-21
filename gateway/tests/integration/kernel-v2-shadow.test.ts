@@ -1,4 +1,5 @@
 ﻿import type { AddressInfo } from 'node:net';
+import * as path from 'node:path';
 import { createKernelV2Server } from '../../src/kernel-v2/facade';
 import { readKernelV2Config } from '../../src/kernel-v2/main';
 import type { KernelDiagnostic } from '../../src/kernel-v2/diagnostics';
@@ -132,12 +133,13 @@ describe('kernel-v2 config', () => {
   });
 
   test('returns a validated config', () => {
+    const dataDir = path.resolve('kernel-v2-test-data');
     const config = readKernelV2Config({
       MAFW_KERNEL_V2_PORT: '3100',
-      MAFW_KERNEL_V2_DATA_DIR: 'C:/tmp/kernel-v2',
+      MAFW_KERNEL_V2_DATA_DIR: dataDir,
     });
     expect(config.port).toBe(3100);
-    expect(config.dataDir).toBe('C:/tmp/kernel-v2');
+    expect(config.dataDir).toBe(dataDir);
   });
 });
 

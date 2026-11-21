@@ -13,6 +13,7 @@
  */
 import type { IncomingMessage, ServerResponse } from 'http';
 import { log } from '../core/utils/logger';
+import { runtimeCapabilityEnabled } from '../runtime/runtime-access';
 import { handleSessionHistory } from './session-history';
 import type { RouteRegistry } from './registry';
 
@@ -120,7 +121,7 @@ export function attachSessionsReadRoutes(registry: RouteRegistry, deps: Sessions
     const id = params.id;
     try {
       const runtime = deps.runtime();
-      if (!runtime?.session?.children || runtime.capabilities?.sessionChildrenApi === false) {
+      if (!runtime?.session?.children || !runtimeCapabilityEnabled(runtime, 'sessionChildrenApi')) {
         res.writeHead(503, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'runtime does not support session.children' }));
         return;

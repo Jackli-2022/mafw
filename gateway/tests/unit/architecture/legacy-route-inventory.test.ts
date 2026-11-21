@@ -50,7 +50,7 @@ interface TransportInventory {
 
 function transportInventory(): TransportInventory {
   const src = fs.readFileSync(TRANSPORT, 'utf-8');
-  const exact = [...src.matchAll(/url === ['"](\/[^'"]*)['"]/g)].map((m) => m[1]);
+  const exact = [...src.matchAll(/(?:url|pathname) === ['"](\/[^'"]*)['"]/g)].map((m) => m[1]);
   const prefix = [...src.matchAll(/pathname\.startsWith\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1]);
   const slots = (src.match(/matchArtifactId\(url\)/g) || []).length;
   return { exact, prefix, slots, total: exact.length + prefix.length + slots };
@@ -173,11 +173,11 @@ describe('transport inventory (D3 Task 3: http/transport.ts)', () => {
       'resolvePrincipal(',
       'deps.dispatchAuthorized(req, res, apiToken)',
       'deps.pluginWebWildcard(req, res)',
-      'deps.fileHistory(req, res, isLoopback)',
+      'deps.fileHistory(req, res, isLocal)',
       'url === "/a2a"',
       'pathname.startsWith("/api/goals")',
       "url === '/control'",
-      "url === '/health'",
+      "pathname === '/health'",
       'deps.proxyTarget()',
       "'[Scheduler] Unhandled request error:'",
     ];

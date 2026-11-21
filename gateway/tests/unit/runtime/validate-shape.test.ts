@@ -29,7 +29,7 @@ const OK_RT = (over: any = {}) => {
   const { caps, session, ...rest } = over;
   return {
     name: 'rt',
-    capabilities: { ...minimalCapabilities(), ...caps },
+    capabilities: { ...minimalCapabilities(), sessionChildrenApi: true, ...caps },
     session: { ...FULL_SESSION(), ...session },
     global: { event: async function* () {} },
     getBaseUrl: () => 'http://127.0.0.1:4096',
@@ -67,7 +67,7 @@ describe('validateRuntime — hard violations', () => {
     expect(v.hard.some((i) => i.includes('sessionApi') && i.includes('session is missing'))).toBe(true);
   });
 
-  it.each(['create', 'promptAsync', 'prompt', 'messages', 'get', 'delete', 'abort', 'list', 'todo', 'children', 'summarize'])(
+  it.each(['create', 'promptAsync', 'prompt', 'messages', 'get', 'delete', 'abort', 'list', 'todo', 'summarize'])(
     'sessionApi declared but session.%s missing -> hard issue naming the method',
     (method) => {
       const rt = OK_RT(); delete (rt as any).session[method];
@@ -75,6 +75,13 @@ describe('validateRuntime — hard violations', () => {
       expect(v.hard.some((i) => i.includes(`session.${method}`))).toBe(true);
     },
   );
+
+  it('declares sessionChildrenApi but session.children missing -> downgraded to false', () => {
+    const rt = OK_RT(); delete (rt as any).session.children;
+    const v = validateRuntime(rt as any, 'my-rt');
+    expect((rt as any).capabilities.sessionChildrenApi).toBe(false);
+    expect(v.downgraded.some((i) => i.includes('sessionChildrenApi'))).toBe(true);
+  });
 
   it('declares eventStream but global.event missing -> hard issue', () => {
     const rt = OK_RT({ caps: { eventStream: true } }); delete (rt as any).global;
