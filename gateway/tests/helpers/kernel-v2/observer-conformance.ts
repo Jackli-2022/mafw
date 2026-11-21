@@ -31,8 +31,8 @@ export function runObserverConformance(
     test('fans out to every matching observer', async () => {
       const registry = factory.create();
       const seen: string[] = [];
-      registry.register({ id: 'a', onEvent: () => seen.push('a') });
-      registry.register({ id: 'b', onEvent: () => seen.push('b') });
+      registry.register({ id: 'a', onEvent: () => { seen.push('a') } });
+      registry.register({ id: 'b', onEvent: () => { seen.push('b') } });
       registry.dispatch(event());
       await registry.drain();
       expect(seen.sort()).toEqual(['a', 'b']);
@@ -45,7 +45,7 @@ export function runObserverConformance(
       registry.register({
         id: 'a',
         filter: { sessionID: 's1', types: ['tool.*'] },
-        onEvent: (e) => seen.push(e.type),
+        onEvent: (e) => { seen.push(e.type) },
       });
       registry.dispatch(event({ sessionID: 's2' }));
       registry.dispatch(event({ type: 'message.updated' }));
@@ -69,7 +69,7 @@ export function runObserverConformance(
           throw new Error('async boom');
         },
       });
-      registry.register({ id: 'good', onEvent: () => seen.push('good') });
+      registry.register({ id: 'good', onEvent: () => { seen.push('good') } });
       registry.dispatch(event());
       await registry.drain();
       expect(seen).toEqual(['good']);
@@ -105,7 +105,7 @@ export function runObserverConformance(
       const seen: string[] = [];
       registry.register({
         id: 'a',
-        onEvent: () => seen.push('x'),
+        onEvent: () => { seen.push('x') },
         dispose: () => {
           disposed += 1;
         },
