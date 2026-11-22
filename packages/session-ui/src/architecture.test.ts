@@ -24,6 +24,8 @@ const PACKAGE_ROOT = join(HERE, "..")
 interface Rule {
   name: string
   pattern: RegExp
+  /** Presentation-only lines (theme names) are not runtime identity. */
+  ignoreLine?: RegExp
 }
 
 const RULES: Rule[] = [
@@ -32,7 +34,13 @@ const RULES: Rule[] = [
     pattern: /\bruntimeCaps\b|\brtCaps\b|\bworktreeApi\b|\bdiffApi\b|\bsteerApi\b|\brunStateApi\b|\bcheckpointApi\b|\bsessionBranchApi\b|\bmcpConfigApi\b|\binstructionsApi\b|\bdiscoveryApi\b/,
   },
   { name: "runtime-name", pattern: /\bruntimeName\b|\brtName\b|\bactive\.name\b/ },
-  { name: "runtime-literal", pattern: /\b(?:opencode|claude)\b/i },
+  {
+    name: "runtime-literal",
+    pattern: /\b(?:opencode|claude)\b/i,
+    // Shiki/Pierre theme names are presentation vocabulary, not runtime
+    // identity; keep flagging the same words in logic/values elsewhere.
+    ignoreLine: /\btheme:\s*['"]/,
+  },
   { name: "wire-shape", pattern: /\.info\s*\?\?|\bitem\.info\b|\b(?:m|msg|message|row|entry)\.parts\s*\?\?|properties\?*\.info\b/ },
   { name: "sdk-import", pattern: /@opencode-ai\/sdk/ },
 ]
@@ -44,7 +52,16 @@ function stripComments(text: string): string {
 
 export function scanSessionUiSource(text: string, rules: Rule[] = RULES): string[] {
   const code = stripComments(text)
-  return rules.filter((rule) => rule.pattern.test(code)).map((rule) => rule.name)
+  return rules
+    .filter((rule) => {
+      if (!rule.pattern.test(code)) return false
+      if (!rule.ignoreLine) return true
+      // The rule still fires when any non-presentation line matches.
+      return code
+        .split("\n")
+        .some((line) => rule.pattern.test(line) && !rule.ignoreLine!.test(line))
+    })
+    .map((rule) => rule.name)
 }
 
 /** 反向 fixture 入口（spec §11）。 */
@@ -78,6 +95,9 @@ describe("session-ui architecture: View DTO only", () => {
     // 合法的 DTO/Experience 面不得误报；注释术语也不算。
     expect(scanSessionUiFixture("const part: MafwPart = view();")).toEqual([])
     expect(scanSessionUiFixture("// 不再读 properties.info\nconst ok = 1;")).toEqual([])
+    // Theme names are presentation-only; the same words in logic still fail.
+    expect(scanSessionUiFixture('const highlighter = { theme: "OpenCode" };')).toEqual([])
+    expect(scanSessionUiFixture('if (runtime === "opencode") {}')).toContain("runtime-literal")
   })
 
   test("full source tree has no runtime identity, capabilities, wire shapes or runtime SDK", () => {

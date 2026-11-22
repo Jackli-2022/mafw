@@ -457,7 +457,7 @@ function record(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * `opencode export` JSON 摄取 → MAFW flat 历史（消息 + 按消息归组的 parts）。
+ * `session export` JSON 摄取 → MAFW flat 历史（消息 + 按消息归组的 parts）。
  *
  * 故事只做一次性导入：这里的 wire 读取属于客户端摄取层，渲染链路一律走
  * flat `MafwMessage`/`MafwPart`。
@@ -486,7 +486,7 @@ function normalize(raw: unknown): { info: Record<string, unknown>; messages: UiM
   }
 
   if (!record(raw) || !record(raw.info) || typeof raw.info.id !== "string" || !Array.isArray(raw.messages)) {
-    throw new Error("Expected an `opencode export` JSON file")
+    throw new Error("Expected an `session export` JSON file")
   }
 
   const part = new Map<string, Part[]>()
@@ -508,7 +508,7 @@ function mkUser(text: string, extra: Part[] = [], sessionID = SESSION_ID): { mes
       role: "user",
       time: { created: Date.now() },
       agent: "code",
-      model: { providerID: "anthropic", modelID: "claude-sonnet-4-20250514" },
+      model: { providerID: "anthropic", modelID: "model-alpha" },
     },
     parts: [
       { id: uid(), type: "text", text, time: { start: Date.now() } },
@@ -525,7 +525,7 @@ function mkAssistant(parentID: string, sessionID = SESSION_ID): UiAssistantMessa
     role: "assistant",
     time: { created: Date.now(), completed: Date.now() + 3000 },
     parentID,
-    model: { providerID: "anthropic", modelID: "claude-sonnet-4-20250514" },
+    model: { providerID: "anthropic", modelID: "model-alpha" },
     agent: "code",
   }
 }
@@ -1250,7 +1250,7 @@ function Playground() {
           {
             id: "anthropic",
             name: "Anthropic",
-            models: [{ id: "claude-sonnet-4-20250514", name: "Claude Sonnet" }],
+            models: [{ id: "model-alpha", name: "Model Alpha" }],
           },
         ],
       ]),
@@ -1667,7 +1667,7 @@ function Playground() {
               {/* ---- Session import ---- */}
               <div style={sectionLabel}>Import session</div>
               <div style={{ "font-size": "10px", color: "var(--text-weaker)", "margin-bottom": "2px" }}>
-                Replaces the current timeline with an `opencode export` JSON file
+                Replaces the current timeline with an `session export` JSON file
               </div>
               <div style={{ display: "flex", "flex-wrap": "wrap", gap: "4px" }}>
                 <button style={btnAccent} onClick={() => pick?.click()}>
