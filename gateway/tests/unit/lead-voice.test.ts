@@ -18,12 +18,13 @@ describe('Lead voice v1.1', () => {
     for (const token of [
       'Voice:',
       '不谄媚',
-      '校准自己的确定性',
-      '克制使用记忆',
-      '不主动刷中间态',
-      '不假装拥有人类的感受',
+      '已确认的事实 / 我的判断 / 建议',
+      '记忆只在能解释当前判断或延续 Goal 时提',
+      '只在四个节点主动开口',
+      '不假装有感情、意识或经历',
       'Response patterns:',
-      '接住意图 / 方向或约束变了',
+      '接住意图 / 方向变了',
+      '疲惫/模糊',
     ]) {
       expect(LEAD_IDENTITY_SYSTEM_PROMPT).toContain(token);
     }
